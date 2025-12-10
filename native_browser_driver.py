@@ -2,10 +2,11 @@
 import sys
 import time
 import io
+import re
 import ctypes
 import subprocess
 from dataclasses import dataclass
-from typing import Optional, Literal, Union
+from typing import Optional, Literal, Union, Iterable
 
 from pywinauto import Desktop, Application
 from pywinauto.keyboard import send_keys
@@ -14,6 +15,7 @@ import win32con
 import win32gui
 import win32ui
 import win32clipboard
+import win32process
 from PIL import Image
 import mss
 
@@ -38,22 +40,106 @@ BROWSER_CONFIG = {
 }
 
 
-def get_browser_window(browser: str = "chrome"):
-    """指定ブラウザのウィンドウを取得（なければ起動）"""
+def get_browser_window(
+    browser: str = "chrome",
+    *,
+    extra_title_keywords: Optional[Iterable[str]] = None,
+    title_regex: Optional[str] = None,
+    require_visible: bool = False,
+    require_enabled: bool = False,
+    exclude_minimized: bool = False,
+    class_name: Optional[str] = None,
+    control_type: str = "Window",
+    window_predicate=None,
+    exe_name: Optional[str] = None,
+    retries: int = 3,
+    start_if_not_found: bool = True,
+):
+    """
+    指定ブラウザのウィンドウを取得（なければ起動も可能）。
+
+    追加条件:
+        - extra_title_keywords: タイトル部分一致の追加キーワード
+        - title_regex: タイトル正規表現（既定の title_regex を上書き）
+        - require_visible: 可視ウィンドウのみ
+        - require_enabled: 有効ウィンドウのみ
+        - exclude_minimized: 最小化されたウィンドウを除外
+        - class_name: Win32 クラス名で絞り込み
+        - control_type: Desktop.windows の control_type
+        - window_predicate: callable(window) -> bool で任意絞り込み
+        - exe_name: 実行ファイル名/パスに含まれる文字列で絞り込み
+        - retries: 探索リトライ回数
+        - start_if_not_found: 見つからないときに起動コマンドを実行するか
+    """
     config = BROWSER_CONFIG.get(browser)
     if not config:
         raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
 
-    keywords = config["title_keywords"]
+    keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
     start_cmd = config["start_command"]
+    title_re = title_regex or config.get("title_regex")
+    exe_filter = exe_name or config.get("exe_name")
 
-    for _ in range(3):
-        for w in desktop.windows(control_type="Window"):
+    retries = max(1, int(retries))
+
+    for _ in range(retries):
+        for w in desktop.windows(control_type=control_type):
             title = w.window_text() or ""
-            if any(kw in title for kw in keywords):
-                return w
-        subprocess.Popen(start_cmd, shell=True)
+
+            if exclude_minimized:
+                try:
+                    if win32gui.IsIconic(w.handle):
+                        continue
+                except Exception:
+                    pass
+
+            if require_visible:
+                try:
+                    if not w.is_visible():
+                        continue
+                except Exception:
+                    pass
+
+            if require_enabled:
+                try:
+                    if not w.is_enabled():
+                        continue
+                except Exception:
+                    pass
+
+            if class_name:
+                try:
+                    if w.class_name() != class_name:
+                        continue
+                except Exception:
+                    pass
+
+            keyword_hit = any(kw in title for kw in keywords) if keywords else False
+            regex_hit = bool(re.search(title_re, title)) if title_re else False
+            if not keyword_hit and not regex_hit:
+                continue
+
+            if exe_filter:
+                try:
+                    pid = w.process_id()
+                    image_path = _get_process_image_path(pid)
+                    if image_path:
+                        lowered_path = image_path.lower()
+                        lowered_filter = exe_filter.lower()
+                        if lowered_filter not in lowered_path and not lowered_path.endswith(lowered_filter):
+                            continue
+                except Exception:
+                    pass
+
+            if window_predicate and not window_predicate(w):
+                continue
+
+            return w
+
+        if start_if_not_found:
+            subprocess.Popen(start_cmd, shell=True)
         time.sleep(1)
+
     raise RuntimeError(f"{browser.capitalize()} Window Not Found.")
 
 
@@ -103,6 +189,23 @@ class Rect:
 def _get_window_rect(hwnd: int) -> Rect:
     l, t, r, b = win32gui.GetWindowRect(hwnd)
     return Rect(l, t, r, b)
+
+
+def _get_process_image_path(pid: int) -> Optional[str]:
+    """プロセスの実行ファイルパスを取得（失敗時は None）"""
+    PROCESS_QUERY_INFORMATION = 0x0400
+    PROCESS_VM_READ = 0x0010
+    handle = None
+    try:
+        handle = win32process.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+        try:
+            return win32process.GetModuleFileNameEx(handle, 0)
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    except Exception:
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+        return None
 
 
 def _is_probably_blank(img: Image.Image) -> bool:
@@ -206,7 +309,20 @@ def _force_foreground(hwnd: int) -> None:
 class NativeBrowserDriver:
     """Chrome/Edge共通の基底クラス"""
 
-    def __init__(self, browser: str = "chrome"):
+    def __init__(
+        self,
+        browser: str = "chrome",
+        *,
+        extra_title_keywords: Optional[Iterable[str]] = None,
+        title_regex: Optional[str] = None,
+        require_visible: bool = False,
+        require_enabled: bool = False,
+        exclude_minimized: bool = False,
+        class_name: Optional[str] = None,
+        control_type: str = "Window",
+        window_predicate=None,
+        exe_name: Optional[str] = None,
+    ):
         if browser not in BROWSER_CONFIG:
             raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
 
@@ -219,7 +335,18 @@ class NativeBrowserDriver:
         self.window = None
 
         # 1. まずウィンドウを確実に取得する（なければ起動も含めて get_browser_window が担当）
-        found_window = get_browser_window(browser)
+        found_window = get_browser_window(
+            browser,
+            extra_title_keywords=extra_title_keywords,
+            title_regex=title_regex,
+            require_visible=require_visible,
+            require_enabled=require_enabled,
+            exclude_minimized=exclude_minimized,
+            class_name=class_name,
+            control_type=control_type,
+            window_predicate=window_predicate,
+            exe_name=exe_name,
+        )
         
         # 2. 取得したウィンドウ情報を元に接続する
         self.connect(found_window)
@@ -395,14 +522,53 @@ class NativeBrowserDriver:
                     pass
             return "Unknown"
 
-    def scan_page_elements(self, control_type=None, max_elements=500):
-        """現在のページの主要要素をリストアップ（簡易）"""
+    def scan_page_elements(
+        self,
+        control_type=None,
+        max_elements=500,
+        *,
+        name_contains: Optional[Union[str, Iterable[str]]] = None,
+        name_regex: Optional[str] = None,
+        class_name: Optional[str] = None,
+        only_visible: bool = False,
+        require_enabled: bool = False,
+        min_width: int = 0,
+        min_height: int = 0,
+        only_focusable: bool = False,
+        start_index: int = 0,
+        end_index: Optional[int] = None,
+        automation_id: Optional[Union[str, Iterable[str]]] = None,
+    ):
+        """
+        現在のページの主要要素をリストアップ（発見順にインデックスを付与）。
+
+        追加条件:
+            - name_contains: 部分一致（str または Iterable[str]）
+            - name_regex: タイトル/ラベルの正規表現
+            - class_name: friendly_class_name() で一致
+            - only_visible: 可視要素のみ
+            - require_enabled: 有効要素のみ
+            - min_width / min_height: サイズ下限（px）
+            - only_focusable: キーボードフォーカス可能なもののみ
+            - start_index / end_index: 条件を満たしたものの発見順インデックス範囲で出力（0-based, end は inclusive）
+            - automation_id: automation_id で一致（str または Iterable[str]）
+        """
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
         self.window.set_focus()
 
         elements_map = {}
         text_output = []
-        index = 0
+        matched_index = 0
+
+        contains_list = None
+        if name_contains:
+            contains_list = [name_contains] if isinstance(name_contains, str) else list(name_contains)
+
+        automation_id_list = None
+        if automation_id:
+            automation_id_list = [automation_id] if isinstance(automation_id, str) else list(automation_id)
+
+        compiled_regex = re.compile(name_regex) if name_regex else None
 
         if control_type:
             all_items = self.window.descendants(control_type=control_type)
@@ -416,15 +582,65 @@ class NativeBrowserDriver:
                     continue
 
                 rect = item.rectangle()
-                if rect.height() == 0 or rect.width() == 0:
+                if rect.height() <= min_height or rect.width() <= min_width:
                     continue
 
-                c_type = item.friendly_class_name()
-                elements_map[index] = item
-                text_output.append(f"[{index}] <{c_type}> {name}")
-                index += 1
+                if only_visible:
+                    try:
+                        if not item.is_visible():
+                            continue
+                    except Exception:
+                        continue
 
-                if index > max_elements:
+                if require_enabled:
+                    try:
+                        if not item.is_enabled():
+                            continue
+                    except Exception:
+                        continue
+
+                if only_focusable:
+                    try:
+                        if not item.is_keyboard_focusable():
+                            continue
+                    except Exception:
+                        continue
+
+                if class_name:
+                    try:
+                        if item.friendly_class_name() != class_name:
+                            continue
+                    except Exception:
+                        continue
+
+                if contains_list and not any(sub in name for sub in contains_list):
+                    continue
+
+                if compiled_regex and not compiled_regex.search(name):
+                    continue
+
+                if automation_id_list:
+                    try:
+                        auto_id = item.element_info.automation_id
+                        if auto_id is None or all(auto_id != aid for aid in automation_id_list):
+                            continue
+                    except Exception:
+                        continue
+
+                c_type = item.friendly_class_name()
+
+                current_index = matched_index
+                matched_index += 1
+
+                if current_index < start_index:
+                    continue
+                if end_index is not None and current_index > end_index:
+                    break
+
+                elements_map[current_index] = item
+                text_output.append(f"[{current_index}] <{c_type}> {name}")
+
+                if len(elements_map) >= max_elements:
                     text_output.append("... (more elements truncated)")
                     break
             except Exception:
