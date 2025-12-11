@@ -384,6 +384,50 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "取得する最大要素数（デフォルト: 500）",
                     },
+                    "name_contains": {
+                        "type": "string",
+                        "description": "要素名に含まれるべき文字列（部分一致）",
+                    },
+                    "name_regex": {
+                        "type": "string",
+                        "description": "要素名にマッチする正規表現",
+                    },
+                    "class_name": {
+                        "type": "string",
+                        "description": "friendly_class_name()で一致させるクラス名",
+                    },
+                    "only_visible": {
+                        "type": "boolean",
+                        "description": "可視要素のみ取得（デフォルト: false）",
+                    },
+                    "require_enabled": {
+                        "type": "boolean",
+                        "description": "有効な要素のみ取得（デフォルト: false）",
+                    },
+                    "min_width": {
+                        "type": "integer",
+                        "description": "最小幅（ピクセル）",
+                    },
+                    "min_height": {
+                        "type": "integer",
+                        "description": "最小高さ（ピクセル）",
+                    },
+                    "only_focusable": {
+                        "type": "boolean",
+                        "description": "キーボードフォーカス可能な要素のみ（デフォルト: false）",
+                    },
+                    "start_index": {
+                        "type": "integer",
+                        "description": "取得開始インデックス（0-based）",
+                    },
+                    "end_index": {
+                        "type": "integer",
+                        "description": "取得終了インデックス（0-based, inclusive）",
+                    },
+                    "automation_id": {
+                        "type": "string",
+                        "description": "automation_idで一致させる値",
+                    },
                 }
             ),
         ),
@@ -587,7 +631,33 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         elif name == "chrome_scan_elements":
             control_type = arguments.get("control_type")
             max_elements = arguments.get("max_elements", 500)
-            result = driver.scan_page_elements(control_type=control_type, max_elements=max_elements)
+            name_contains = arguments.get("name_contains")
+            name_regex = arguments.get("name_regex")
+            class_name = arguments.get("class_name")
+            only_visible = arguments.get("only_visible", False)
+            require_enabled = arguments.get("require_enabled", False)
+            min_width = arguments.get("min_width", 0)
+            min_height = arguments.get("min_height", 0)
+            only_focusable = arguments.get("only_focusable", False)
+            start_index = arguments.get("start_index", 0)
+            end_index = arguments.get("end_index")
+            automation_id = arguments.get("automation_id")
+
+            result = driver.scan_page_elements(
+                control_type=control_type,
+                max_elements=max_elements,
+                name_contains=name_contains,
+                name_regex=name_regex,
+                class_name=class_name,
+                only_visible=only_visible,
+                require_enabled=require_enabled,
+                min_width=min_width,
+                min_height=min_height,
+                only_focusable=only_focusable,
+                start_index=start_index,
+                end_index=end_index,
+                automation_id=automation_id,
+            )
             return [TextContent(type="text", text=result if result else "要素が見つかりませんでした")]
 
         elif name == "chrome_click_element":
