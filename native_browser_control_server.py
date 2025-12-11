@@ -6,6 +6,7 @@ Windows UI Automation経由でChrome/Edgeを制御するMCPサーバー。
 Seleniumを使用せず、pywinautoを使った直接制御を提供します。
 """
 
+import argparse
 import asyncio
 import base64
 from typing import Any
@@ -20,6 +21,9 @@ from mcp.types import (
 )
 
 from native_browser_driver import NativeBrowserDriver, NativeChromeDriver, NativeEdgeDriver
+
+# バージョン情報
+__version__ = "0.1.0"
 
 # ブラウザごとのドライバーインスタンス（遅延初期化）
 DRIVER_FACTORIES: dict[str, type[NativeBrowserDriver]] = {
@@ -705,6 +709,20 @@ async def run_server():
 
 def main():
     """エントリーポイント"""
+    parser = argparse.ArgumentParser(
+        description="Native Browser Control MCP Server - Windows UI Automation経由でChrome/Edgeを制御",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"native-browser-control {__version__}",
+    )
+
+    # 引数をパース（--helpや--versionの処理）
+    parser.parse_args()
+
+    # MCPサーバーとして起動
     asyncio.run(run_server())
 
 
