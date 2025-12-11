@@ -31,10 +31,9 @@ pip install -e .
 ## 起動方法
 - MCP サーバー（標準入出力）として起動:
 ```powershell
-native-browser-mcp
-# 旧コマンド互換: native-chrome-mcp
+native-browser-control
 # または
-python browser_mcp_server.py
+python native_browser_control_server.py
 ```
 - サーバー名は `native-browser-control`。MCP クライアント側から各ツールを呼び出して操作します。
 
@@ -55,6 +54,6 @@ python browser_mcp_server.py
 - `chrome_scan_elements` 実行後に取得したインデックスを `chrome_click_element` で利用してください。
 
 ## 主要ファイル
-- `browser_mcp_server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
+- `native_browser_control_server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
 - `native_browser_driver.py`: Chrome/Edge UI 自動化ロジック。スクリーンショット、入力、タブ/スクロール操作などを実装。
 - `pyproject.toml`: パッケージ/スクリプト定義。

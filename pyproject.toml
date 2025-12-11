@@ -13,8 +13,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["browser_mcp_server", "native_browser_driver"]
+py-modules = ["native_browser_control_server", "native_browser_driver"]
 
 [project.scripts]
-native-browser-mcp = "browser_mcp_server:main"
-native-chrome-mcp = "browser_mcp_server:main"
+native-browser-control = "native_browser_control_server:main"
