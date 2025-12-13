@@ -6,7 +6,7 @@ import re
 import ctypes
 import subprocess
 from dataclasses import dataclass
-from typing import Optional, Literal, Union, Iterable
+from typing import Optional, Literal, Union, Iterable, List
 
 from pywinauto import Desktop, Application
 from pywinauto.keyboard import send_keys
@@ -40,6 +40,133 @@ BROWSER_CONFIG = {
 }
 
 
+def _match_browser_window(
+    window,
+    *,
+    keywords: list[str],
+    title_re: Optional[str],
+    require_visible: bool,
+    require_enabled: bool,
+    exclude_minimized: bool,
+    class_name: Optional[str],
+    window_predicate,
+    exe_filter: Optional[str],
+) -> bool:
+    """ブラウザウィンドウ探索用の共通フィルター。"""
+    title = window.window_text() or ""
+
+    if exclude_minimized:
+        try:
+            if win32gui.IsIconic(window.handle):
+                return False
+        except Exception:
+            return False
+
+    if require_visible:
+        try:
+            if not window.is_visible():
+                return False
+        except Exception:
+            return False
+
+    if require_enabled:
+        try:
+            if not window.is_enabled():
+                return False
+        except Exception:
+            return False
+
+    if class_name:
+        try:
+            if window.class_name() != class_name:
+                return False
+        except Exception:
+            return False
+
+    keyword_hit = any(kw in title for kw in keywords) if keywords else False
+    regex_hit = bool(re.search(title_re, title)) if title_re else False
+    if not keyword_hit and not regex_hit:
+        return False
+
+    if exe_filter:
+        try:
+            pid = window.process_id()
+            image_path = _get_process_image_path(pid)
+            if image_path:
+                lowered_path = image_path.lower()
+                lowered_filter = exe_filter.lower()
+                if lowered_filter not in lowered_path and not lowered_path.endswith(lowered_filter):
+                    return False
+        except Exception:
+            return False
+
+    if window_predicate and not window_predicate(window):
+        return False
+
+    return True
+
+
+def find_browser_windows(
+    browser: str = "chrome",
+    *,
+    extra_title_keywords: Optional[Iterable[str]] = None,
+    title_regex: Optional[str] = None,
+    require_visible: bool = False,
+    require_enabled: bool = False,
+    exclude_minimized: bool = False,
+    class_name: Optional[str] = None,
+    control_type: str = "Window",
+    window_predicate=None,
+    exe_name: Optional[str] = None,
+    retries: int = 1,
+) -> List:
+    """
+    指定ブラウザの起動中ウィンドウを列挙する。
+
+    追加条件:
+        - extra_title_keywords: タイトル部分一致の追加キーワード
+        - title_regex: タイトル正規表現（既定の title_regex を上書き）
+        - require_visible: 可視ウィンドウのみ
+        - require_enabled: 有効ウィンドウのみ
+        - exclude_minimized: 最小化されたウィンドウを除外
+        - class_name: Win32 クラス名で絞り込み
+        - control_type: Desktop.windows の control_type
+        - window_predicate: callable(window) -> bool で任意絞り込み
+        - exe_name: 実行ファイル名/パスに含まれる文字列で絞り込み
+        - retries: 探索リトライ回数
+    """
+    config = BROWSER_CONFIG.get(browser)
+    if not config:
+        raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+
+    keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
+    title_re = title_regex or config.get("title_regex")
+    exe_filter = exe_name or config.get("exe_name")
+    retries = max(1, int(retries))
+
+    for attempt in range(retries):
+        matches = [
+            w
+            for w in desktop.windows(control_type=control_type)
+            if _match_browser_window(
+                w,
+                keywords=keywords,
+                title_re=title_re,
+                require_visible=require_visible,
+                require_enabled=require_enabled,
+                exclude_minimized=exclude_minimized,
+                class_name=class_name,
+                window_predicate=window_predicate,
+                exe_filter=exe_filter,
+            )
+        ]
+        if matches:
+            return matches
+        if attempt < retries - 1:
+            time.sleep(1)
+    return []
+
+
 def get_browser_window(
     browser: str = "chrome",
     *,
@@ -53,94 +180,120 @@ def get_browser_window(
     window_predicate=None,
     exe_name: Optional[str] = None,
     retries: int = 3,
-    start_if_not_found: bool = True,
+    start_if_not_found: bool = False,
 ):
     """
-    指定ブラウザのウィンドウを取得（なければ起動も可能）。
+    指定ブラウザのウィンドウを取得（既存ウィンドウのみ）。
 
-    追加条件:
-        - extra_title_keywords: タイトル部分一致の追加キーワード
-        - title_regex: タイトル正規表現（既定の title_regex を上書き）
-        - require_visible: 可視ウィンドウのみ
-        - require_enabled: 有効ウィンドウのみ
-        - exclude_minimized: 最小化されたウィンドウを除外
-        - class_name: Win32 クラス名で絞り込み
-        - control_type: Desktop.windows の control_type
-        - window_predicate: callable(window) -> bool で任意絞り込み
-        - exe_name: 実行ファイル名/パスに含まれる文字列で絞り込み
-        - retries: 探索リトライ回数
-        - start_if_not_found: 見つからないときに起動コマンドを実行するか
+    起動されていない場合は例外を投げる。start_if_not_found=True の場合のみ起動を試みる。
     """
     config = BROWSER_CONFIG.get(browser)
     if not config:
         raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
 
-    keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
-    start_cmd = config["start_command"]
-    title_re = title_regex or config.get("title_regex")
-    exe_filter = exe_name or config.get("exe_name")
+    matches = find_browser_windows(
+        browser,
+        extra_title_keywords=extra_title_keywords,
+        title_regex=title_regex,
+        require_visible=require_visible,
+        require_enabled=require_enabled,
+        exclude_minimized=exclude_minimized,
+        class_name=class_name,
+        control_type=control_type,
+        window_predicate=window_predicate,
+        exe_name=exe_name,
+        retries=retries,
+    )
 
-    retries = max(1, int(retries))
+    if matches:
+        return matches[0]
 
-    for _ in range(retries):
-        for w in desktop.windows(control_type=control_type):
-            title = w.window_text() or ""
-
-            if exclude_minimized:
-                try:
-                    if win32gui.IsIconic(w.handle):
-                        continue
-                except Exception:
-                    pass
-
-            if require_visible:
-                try:
-                    if not w.is_visible():
-                        continue
-                except Exception:
-                    pass
-
-            if require_enabled:
-                try:
-                    if not w.is_enabled():
-                        continue
-                except Exception:
-                    pass
-
-            if class_name:
-                try:
-                    if w.class_name() != class_name:
-                        continue
-                except Exception:
-                    pass
-
-            keyword_hit = any(kw in title for kw in keywords) if keywords else False
-            regex_hit = bool(re.search(title_re, title)) if title_re else False
-            if not keyword_hit and not regex_hit:
-                continue
-
-            if exe_filter:
-                try:
-                    pid = w.process_id()
-                    image_path = _get_process_image_path(pid)
-                    if image_path:
-                        lowered_path = image_path.lower()
-                        lowered_filter = exe_filter.lower()
-                        if lowered_filter not in lowered_path and not lowered_path.endswith(lowered_filter):
-                            continue
-                except Exception:
-                    pass
-
-            if window_predicate and not window_predicate(w):
-                continue
-
-            return w
-
-        if start_if_not_found:
-            subprocess.Popen(start_cmd, shell=True)
+    if start_if_not_found:
+        subprocess.Popen(config["start_command"], shell=True)
         time.sleep(1)
+        matches = find_browser_windows(
+            browser,
+            extra_title_keywords=extra_title_keywords,
+            title_regex=title_regex,
+            require_visible=require_visible,
+            require_enabled=require_enabled,
+            exclude_minimized=exclude_minimized,
+            class_name=class_name,
+            control_type=control_type,
+            window_predicate=window_predicate,
+            exe_name=exe_name,
+            retries=retries,
+        )
+        if matches:
+            return matches[0]
 
     raise RuntimeError(f"{browser.capitalize()} Window Not Found.")
+
+
+def _build_window_info(window, browser: str) -> BrowserWindowInfo:
+    try:
+        pid = window.process_id()
+    except Exception:
+        pid = -1
+    try:
+        title = window.window_text() or ""
+    except Exception:
+        title = ""
+    try:
+        is_visible = bool(window.is_visible())
+    except Exception:
+        is_visible = False
+    try:
+        is_minimized = bool(win32gui.IsIconic(window.handle))
+    except Exception:
+        is_minimized = False
+
+    return BrowserWindowInfo(
+        browser=browser,
+        title=title,
+        pid=pid,
+        handle=int(window.handle),
+        is_visible=is_visible,
+        is_minimized=is_minimized,
+    )
+
+
+def list_running_browser_drivers(
+    browser: Optional[str] = None,
+    *,
+    require_visible: bool = False,
+    exclude_minimized: bool = False,
+    retries: int = 1,
+) -> list[BrowserWindowInfo]:
+    """起動中のブラウザドライバ一覧を取得する。"""
+
+    targets = [browser] if browser else list(BROWSER_CONFIG.keys())
+    results: list[BrowserWindowInfo] = []
+
+    for b in targets:
+        matches = find_browser_windows(
+            b,
+            require_visible=require_visible,
+            exclude_minimized=exclude_minimized,
+            retries=retries,
+        )
+        results.extend(_build_window_info(w, b) for w in matches)
+
+    return results
+
+
+def launch_browser_driver(
+    browser: str = "chrome", *, retries: int = 5, start_delay: float = 1.0
+) -> "NativeBrowserDriver":
+    """ブラウザを起動してドライバーを返す。"""
+
+    config = BROWSER_CONFIG.get(browser)
+    if not config:
+        raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+
+    subprocess.Popen(config["start_command"], shell=True)
+    time.sleep(start_delay)
+    return NativeBrowserDriver(browser=browser, retries=retries, start_if_not_found=False)
 
 
 # -----------------------------
@@ -184,6 +337,17 @@ class Rect:
     @property
     def height(self) -> int:
         return max(0, self.bottom - self.top)
+
+
+@dataclass(frozen=True)
+class BrowserWindowInfo:
+    """起動中のブラウザウィンドウ情報を格納するデータクラス。"""
+    browser: str
+    title: str
+    pid: int
+    handle: int
+    is_visible: bool
+    is_minimized: bool
 
 
 def _get_window_rect(hwnd: int) -> Rect:
@@ -322,6 +486,8 @@ class NativeBrowserDriver:
         control_type: str = "Window",
         window_predicate=None,
         exe_name: Optional[str] = None,
+        retries: int = 3,
+        start_if_not_found: bool = False,
     ):
         if browser not in BROWSER_CONFIG:
             raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
@@ -346,6 +512,8 @@ class NativeBrowserDriver:
             control_type=control_type,
             window_predicate=window_predicate,
             exe_name=exe_name,
+            retries=retries,
+            start_if_not_found=start_if_not_found,
         )
         
         # 2. 取得したウィンドウ情報を元に接続する
@@ -1018,20 +1186,20 @@ class NativeBrowserDriver:
 class NativeChromeDriver(NativeBrowserDriver):
     """Chrome専用ドライバー（後方互換性のため）"""
 
-    def __init__(self):
-        super().__init__(browser="chrome")
+    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
+        super().__init__(browser="chrome", retries=retries, start_if_not_found=start_if_not_found)
 
 
 class NativeEdgeDriver(NativeBrowserDriver):
     """Microsoft Edge専用ドライバー"""
 
-    def __init__(self):
-        super().__init__(browser="edge")
+    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
+        super().__init__(browser="edge", retries=retries, start_if_not_found=start_if_not_found)
 
 
 if __name__ == "__main__":
     # Chrome の例
-    driver = NativeChromeDriver()
+    driver = NativeChromeDriver(start_if_not_found=True)
     driver.navigate("https://www.google.com")
     driver.screenshot(file_path="chrome.png", prefer="printwindow", allow_fallback=True)
 
