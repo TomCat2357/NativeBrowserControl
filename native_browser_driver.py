@@ -296,6 +296,60 @@ def launch_browser_driver(
     return NativeBrowserDriver(browser=browser, retries=retries, start_if_not_found=False)
 
 
+def connect_browser_by_index(
+    browser: str = "chrome",
+    *,
+    window_index: int = 0,
+    require_visible: bool = False,
+    exclude_minimized: bool = False,
+    retries: int = 3,
+) -> "NativeBrowserDriver":
+    """
+    指定インデックスのブラウザウィンドウに接続してドライバーを返す。
+
+    Args:
+        browser: ブラウザ種別（chrome/edge）
+        window_index: 接続するウィンドウのインデックス（Pythonスタイル、-1で最後）
+        require_visible: 可視ウィンドウのみ対象
+        exclude_minimized: 最小化ウィンドウを除外
+        retries: 探索リトライ回数
+
+    Raises:
+        RuntimeError: 指定ブラウザが見つからない場合
+        IndexError: 指定インデックスが範囲外の場合
+    """
+    windows = find_browser_windows(
+        browser,
+        require_visible=require_visible,
+        exclude_minimized=exclude_minimized,
+        retries=retries,
+    )
+
+    if not windows:
+        raise RuntimeError(f"{browser.capitalize()} ウィンドウが見つかりません。")
+
+    # Pythonスタイルのインデックス（負のインデックス対応）
+    try:
+        target_window = windows[window_index]
+    except IndexError:
+        raise IndexError(
+            f"インデックス {window_index} は範囲外です。"
+            f" 利用可能なウィンドウ数: {len(windows)} (インデックス: 0〜{len(windows)-1})"
+        )
+
+    # NativeBrowserDriverインスタンスを作成し、指定ウィンドウに接続
+    driver = object.__new__(NativeBrowserDriver)
+    driver.browser = browser
+    driver._config = BROWSER_CONFIG[browser]
+    driver.current_elements = {}
+    driver.app = None
+    driver.window = None
+    _enable_dpi_awareness()
+    driver.connect(target_window)
+
+    return driver
+
+
 # -----------------------------
 # DPI awareness (座標ズレ対策)
 # -----------------------------

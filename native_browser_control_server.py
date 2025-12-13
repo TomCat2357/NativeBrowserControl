@@ -26,6 +26,7 @@ from native_browser_driver import (
     NativeEdgeDriver,
     list_running_browser_drivers,
     launch_browser_driver,
+    connect_browser_by_index,
 )
 
 # バージョン情報
@@ -197,8 +198,8 @@ async def list_tools() -> list[Tool]:
     """利用可能なツールのリストを返す"""
     return [
         Tool(
-            name="chrome_list_running_drivers",
-            description="起動中のChrome/Edgeドライバー一覧を取得します",
+            name="chrome_list_browser_windows",
+            description="起動中のブラウザウィンドウ一覧を取得します（ドライバー接続先の選択用）。インデックス番号付きで表示されます。",
             inputSchema=build_schema(
                 properties={
                     "require_visible": {
@@ -213,9 +214,16 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_launch_browser",
-            description="指定ブラウザを起動し、ドライバーを初期化します（既存があれば再接続）",
-            inputSchema=build_schema(),
+            name="chrome_connect_browser",
+            description="指定ブラウザに接続します。window_indexで接続先を選択（省略時は0番目、-1で最後）。ブラウザが未起動の場合は起動します。",
+            inputSchema=build_schema(
+                properties={
+                    "window_index": {
+                        "type": "integer",
+                        "description": "接続するウィンドウのインデックス（0=最初、-1=最後、省略時は0）。chrome_list_browser_windowsで確認可能。",
+                    },
+                }
+            ),
         ),
         # ナビゲーション
         Tool(
@@ -531,7 +539,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
     arguments = arguments or {}
     browser = arguments.get("browser", "chrome")
     try:
-        if name == "chrome_list_running_drivers":
+        if name == "chrome_list_browser_windows":
             require_visible = bool(arguments.get("require_visible", False))
             exclude_minimized = bool(arguments.get("exclude_minimized", False))
             infos = list_running_browser_drivers(
@@ -544,24 +552,29 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 return [TextContent(type="text", text="起動中の対象ブラウザはありません。")]
 
             lines = [
-                f"{info.browser}: PID={info.pid}, HWND={info.handle}, Visible={info.is_visible}, Minimized={info.is_minimized}, Title={info.title}"
-                for info in infos
+                f"[{i}] {info.browser}: PID={info.pid}, HWND={info.handle}, Visible={info.is_visible}, Minimized={info.is_minimized}, Title={info.title}"
+                for i, info in enumerate(infos)
             ]
             return [TextContent(type="text", text="\n".join(lines))]
 
-        if name == "chrome_launch_browser":
+        if name == "chrome_connect_browser":
             key = browser.lower()
+            window_index = arguments.get("window_index", 0)
             running = list_running_browser_drivers(browser, retries=1)
+
             if running:
-                # 既存ブラウザがある場合は接続を試みる
-                driver = get_driver(browser)
+                # 既存ブラウザがある場合はインデックス指定で接続
+                try:
+                    driver = connect_browser_by_index(browser, window_index=window_index)
+                except IndexError as e:
+                    return [TextContent(type="text", text=f"Error: {e}")]
                 _drivers[key] = driver
                 return [
                     TextContent(
                         type="text",
                         text=(
-                            f"{browser} は既に起動しています。"
-                            f" PID={driver.window.process_id()}, HWND={driver.hwnd} に接続しました。"
+                            f"{browser} ウィンドウ[{window_index}]に接続しました。"
+                            f" PID={driver.window.process_id()}, HWND={driver.hwnd}"
                         ),
                     )
                 ]
