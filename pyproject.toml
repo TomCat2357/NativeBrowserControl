@@ -12,6 +12,9 @@ dependencies = [
     "mcp>=1.0.0",
 ]
 
+[tool.uv]
+package = true
+
 [tool.setuptools]
 py-modules = ["native_browser_control_server", "native_browser_driver"]
 

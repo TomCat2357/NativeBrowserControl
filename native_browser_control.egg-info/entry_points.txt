@@ -1,0 +1,2 @@
+[console_scripts]
+native-browser-control = native_browser_control_server:main
