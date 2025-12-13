@@ -552,7 +552,12 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 return [TextContent(type="text", text="起動中の対象ブラウザはありません。")]
 
             lines = [
-                f"[{i}] {info.browser}: PID={info.pid}, HWND={info.handle}, Visible={info.is_visible}, Minimized={info.is_minimized}, Title={info.title}"
+                (
+                    f"[{i}] {info.browser}: PID={info.pid}, HWND={info.handle}, "
+                    f"Rect=({info.rect.left},{info.rect.top},{info.rect.right},{info.rect.bottom}), "
+                    f"Foreground={info.is_foreground}, Visible={info.is_visible}, "
+                    f"Minimized={info.is_minimized}, Title={info.title}"
+                )
                 for i, info in enumerate(infos)
             ]
             return [TextContent(type="text", text="\n".join(lines))]

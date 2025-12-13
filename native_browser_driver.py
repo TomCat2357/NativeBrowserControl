@@ -1,4 +1,5 @@
 #%%
+from __future__ import annotations
 import sys
 import time
 import io
@@ -231,30 +232,50 @@ def get_browser_window(
 
 
 def _build_window_info(window, browser: str) -> BrowserWindowInfo:
+    """pywinauto window -> BrowserWindowInfo へ正規化して詰め替える。"""
+    hwnd = int(window.handle)
+
+    # PID / title
     try:
-        pid = window.process_id()
+        pid = int(window.process_id())
     except Exception:
         pid = -1
+
     try:
         title = window.window_text() or ""
     except Exception:
         title = ""
+
+    # 可視 / 最小化
     try:
         is_visible = bool(window.is_visible())
     except Exception:
         is_visible = False
+
     try:
-        is_minimized = bool(win32gui.IsIconic(window.handle))
+        is_minimized = bool(win32gui.IsIconic(hwnd))
     except Exception:
         is_minimized = False
+
+    # Rect（取得失敗は例外にする：後方互換不要のため）
+    rect = _get_window_rect(hwnd)
+
+    # Z-order（「現在のフォアグラウンドウィンドウ＝最前面」判定）
+    try:
+        fg_hwnd = int(win32gui.GetForegroundWindow() or 0)
+        is_foreground = hwnd == fg_hwnd
+    except Exception:
+        is_foreground = False
 
     return BrowserWindowInfo(
         browser=browser,
         title=title,
         pid=pid,
-        handle=int(window.handle),
+        handle=hwnd,
+        rect=rect,
         is_visible=is_visible,
         is_minimized=is_minimized,
+        is_foreground=is_foreground,
     )
 
 
@@ -395,13 +416,15 @@ class Rect:
 
 @dataclass(frozen=True)
 class BrowserWindowInfo:
-    """起動中のブラウザウィンドウ情報を格納するデータクラス。"""
+    """起動中のブラウザウィンドウ情報（Rect + 前面判定付き）。"""
     browser: str
     title: str
     pid: int
     handle: int
+    rect: Rect
     is_visible: bool
     is_minimized: bool
+    is_foreground: bool  # Z-order判定（最前面＝フォアグラウンド）
 
 
 def _get_window_rect(hwnd: int) -> Rect:
