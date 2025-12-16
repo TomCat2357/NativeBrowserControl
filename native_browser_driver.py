@@ -817,12 +817,16 @@ class NativeBrowserDriver:
 
                 # 名前が空の場合の特別扱い
                 if not name:
-                    if f_class == "CheckBox":
-                        name = "<CheckBox>"  # 名前がないチェックボックスとして扱う
-                    elif f_class == "Button":
-                        name = "<Button>"    # 必要ならボタンも
+                    # 名前がなくても操作に意味がある要素タイプを許可
+                    unnamed_allowed_types = [
+                        "CheckBox", "Button", "RadioButton", "ComboBox", "ListBox",
+                        "Edit", "Slider", "Spinner", "TabItem", "ToggleButton",
+                        "SplitButton", "MenuItem", "Link", "Hyperlink"
+                    ]
+                    if f_class in unnamed_allowed_types:
+                        name = f"<{f_class}>"
                     else:
-                        continue # その他の名前なし要素はスキップ
+                        continue  # その他の名前なし要素はスキップ
                 # ---------------------------------------
 
                 rect = item.rectangle()
