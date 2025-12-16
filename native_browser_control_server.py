@@ -246,6 +246,18 @@ async def list_tools() -> list[Tool]:
             description="現在のページのタイトルを取得します",
             inputSchema=build_schema(),
         ),
+        Tool(
+            name="chrome_get_browser_summary",
+            description="現在のブラウザ概要（URL/タイトル/状態/位置サイズ/descendants統計）をJSONで取得します",
+            inputSchema=build_schema(
+                properties={
+                    "max_text_len": {
+                        "type": "integer",
+                        "description": "URL/タイトル等の最大文字数（デフォルト: 50）",
+                    },
+                }
+            ),
+        ),
 
         # スクリーンショット
         Tool(
@@ -610,6 +622,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         elif name == "chrome_get_title":
             title = driver.get_page_title()
             return [TextContent(type="text", text=title)]
+
+        elif name == "chrome_get_browser_summary":
+            max_text_len = int(arguments.get("max_text_len", 50))
+            summary = driver.get_browser_summary(max_text_len=max_text_len)
+            import json
+
+            return [
+                TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
+            ]
 
         # スクリーンショット
         elif name == "chrome_screenshot":

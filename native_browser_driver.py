@@ -1113,6 +1113,124 @@ class NativeBrowserDriver:
         except Exception as e:
             return f"Error getting title: {e}"
 
+    def get_browser_summary(self, max_text_len: int = 50) -> dict[str, object]:
+        """現在のブラウザ概要をJSON向けdictで返す（途中出力なし）"""
+
+        def _norm_trunc(value: object) -> str:
+            s = "" if value is None else str(value)
+            s = s.replace("\r", " ").replace("\n", " ").strip()
+            if max_text_len and max_text_len > 0 and len(s) > max_text_len:
+                return s[:max_text_len]
+            return s
+
+        hwnd = self.hwnd
+
+        # 1) URL
+        try:
+            url = self.get_address_bar_url()
+        except Exception as e:
+            url = f"Error: {e}"
+
+        # 2) タイトル
+        try:
+            title = self.get_page_title()
+        except Exception as e:
+            title = f"Error: {e}"
+
+        # 3) 状態（最小化/通常/最大化 + 可視/不可視）
+        window_state = "normal"
+        try:
+            if win32gui.IsIconic(hwnd):
+                window_state = "minimized"
+            elif win32gui.IsZoomed(hwnd):
+                window_state = "maximized"
+        except Exception:
+            pass
+
+        try:
+            visible = bool(win32gui.IsWindowVisible(hwnd))
+        except Exception:
+            try:
+                visible = bool(self.window.is_visible())
+            except Exception:
+                visible = False
+
+        try:
+            offscreen = bool(self.window.element_info.element.CurrentIsOffscreen)
+        except Exception:
+            offscreen = not visible
+
+        # 4) 位置・サイズ
+        rect_payload: dict[str, object]
+        try:
+            rect = _get_window_rect(hwnd)
+            rect_payload = {
+                "left": rect.left,
+                "top": rect.top,
+                "right": rect.right,
+                "bottom": rect.bottom,
+                "width": rect.width,
+                "height": rect.height,
+            }
+        except Exception as e:
+            rect_payload = {"error": _norm_trunc(e)}
+
+        # 5) descendants統計
+        descendants_payload: dict[str, object] = {
+            "total": 0,
+            "visible_total": 0,
+            "invisible_total": 0,
+            "visible_by_control_type": {},
+            "invisible_by_control_type": {},
+        }
+        try:
+            items = self.window.descendants()
+            descendants_payload["total"] = len(items)
+
+            visible_map = descendants_payload["visible_by_control_type"]
+            invisible_map = descendants_payload["invisible_by_control_type"]
+
+            for item in items:
+                try:
+                    control_type = getattr(getattr(item, "element_info", None), "control_type", None)
+                except Exception:
+                    control_type = None
+
+                if not control_type:
+                    try:
+                        control_type = item.friendly_class_name()
+                    except Exception:
+                        control_type = "Unknown"
+
+                control_type = str(control_type)
+
+                try:
+                    is_visible = bool(item.is_visible())
+                except Exception:
+                    is_visible = False
+
+                if is_visible:
+                    descendants_payload["visible_total"] = int(descendants_payload["visible_total"]) + 1
+                    visible_map[control_type] = int(visible_map.get(control_type, 0)) + 1
+                else:
+                    descendants_payload["invisible_total"] = int(descendants_payload["invisible_total"]) + 1
+                    invisible_map[control_type] = int(invisible_map.get(control_type, 0)) + 1
+
+        except Exception as e:
+            descendants_payload["error"] = _norm_trunc(e)
+
+        return {
+            "url": _norm_trunc(url),
+            "title": _norm_trunc(title),
+            "state": {
+                "window": window_state,
+                "visible": visible,
+                "offscreen": offscreen,
+            },
+            "rect": rect_payload,
+            "descendants": descendants_payload,
+        }
+
     # ========================================
     # ページソース取得
     # ========================================
