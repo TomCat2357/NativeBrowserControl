@@ -784,22 +784,10 @@ class NativeBrowserDriver:
         end_index: Optional[int] = None,
         automation_id: Optional[Union[str, Iterable[str]]] = None,
     ):
-        """
-        現在のページの主要要素をリストアップ（発見順にインデックスを付与）。
-
-        追加条件:
-            - name_contains: 部分一致（str または Iterable[str]）
-            - name_regex: タイトル/ラベルの正規表現
-            - class_name: friendly_class_name() で一致
-            - only_visible: 可視要素のみ
-            - require_enabled: 有効要素のみ
-            - min_width / min_height: サイズ下限（px）
-            - only_focusable: キーボードフォーカス可能なもののみ
-            - start_index / end_index: 条件を満たしたものの発見順インデックス範囲で出力（0-based, end は inclusive）
-            - automation_id: automation_id で一致（str または Iterable[str]）
-        """
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
+        
+        # 毎回フォーカスを奪うとポップアップが消えることがあるので、状況によってはコメントアウトしても良い
+        # self.window.set_focus()
 
         elements_map = {}
         text_output = []
@@ -815,6 +803,7 @@ class NativeBrowserDriver:
 
         compiled_regex = re.compile(name_regex) if name_regex else None
 
+        # 全要素取得
         if control_type:
             all_items = self.window.descendants(control_type=control_type)
         else:
@@ -822,9 +811,19 @@ class NativeBrowserDriver:
 
         for item in all_items:
             try:
+                # --- 【変更点】 名前取得ロジックの改良 ---
                 name = item.window_text()
+                f_class = item.friendly_class_name()
+
+                # 名前が空の場合の特別扱い
                 if not name:
-                    continue
+                    if f_class == "CheckBox":
+                        name = "<CheckBox>"  # 名前がないチェックボックスとして扱う
+                    elif f_class == "Button":
+                        name = "<Button>"    # 必要ならボタンも
+                    else:
+                        continue # その他の名前なし要素はスキップ
+                # ---------------------------------------
 
                 rect = item.rectangle()
                 if rect.height() <= min_height or rect.width() <= min_width:
@@ -853,7 +852,7 @@ class NativeBrowserDriver:
 
                 if class_name:
                     try:
-                        if item.friendly_class_name() != class_name:
+                        if f_class != class_name:
                             continue
                     except Exception:
                         continue
@@ -872,8 +871,6 @@ class NativeBrowserDriver:
                     except Exception:
                         continue
 
-                c_type = item.friendly_class_name()
-
                 current_index = matched_index
                 matched_index += 1
 
@@ -883,7 +880,15 @@ class NativeBrowserDriver:
                     break
 
                 elements_map[current_index] = item
-                text_output.append(f"[{current_index}] <{c_type}> {name}")
+                
+                # リスト表示にも AutomationId を追加しておくと特定しやすくなります
+                try:
+                    aid = item.element_info.automation_id
+                    aid_str = f" [ID:{aid}]" if aid else ""
+                except:
+                    aid_str = ""
+
+                text_output.append(f"[{current_index}] <{f_class}> {name}{aid_str}")
 
                 if len(elements_map) >= max_elements:
                     text_output.append("... (more elements truncated)")
