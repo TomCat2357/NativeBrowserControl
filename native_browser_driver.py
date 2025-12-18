@@ -836,9 +836,14 @@ class NativeBrowserDriver:
         only_focusable: bool = False,
         index_ranges: Optional[str] = None,
         automation_id: Optional[Union[str, Iterable[str]]] = None,
+        separator: Optional[str] = None,
+        min_separator_count: int = 1,
     ):
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        
+
+        # separator: 出現をトリガーに指定回数までは結果出力を抑制するための境界（名称/コントロールタイプ）。
+        # min_separator_count: separatorがこの回数検知されるまではヒット要素を集計しない。
+
         # 毎回フォーカスを奪うとポップアップが消えることがあるので、状況によってはコメントアウトしても良い
         # self.window.set_focus()
 
@@ -861,8 +866,12 @@ class NativeBrowserDriver:
 
         compiled_regex = re.compile(name_regex) if name_regex else None
 
+        separator_lower = separator.lower() if separator else None
+        separator_threshold = max(0, int(min_separator_count or 0)) if separator else 0
+        separator_hits = 0
+
         # 全要素取得
-        if control_type:
+        if control_type and not separator:
             all_items = self.window.descendants(control_type=control_type)
         else:
             all_items = self.window.descendants()
@@ -888,6 +897,24 @@ class NativeBrowserDriver:
                     else:
                         continue  # その他の名前なし要素はスキップ
                 # ---------------------------------------
+
+                is_separator = False
+                if separator_lower:
+                    name_lower = name.lower()
+                    try:
+                        control_type_name = item.control_type()
+                    except Exception:
+                        control_type_name = None
+
+                    if (
+                        separator_lower in name_lower
+                        or f_class.lower() == separator_lower
+                        or (isinstance(control_type_name, str) and control_type_name.lower() == separator_lower)
+                    ):
+                        is_separator = True
+
+                if control_type and not (f_class == control_type or is_separator):
+                    continue
 
                 rect = item.rectangle()
                 if rect.height() <= min_height or rect.width() <= min_width:
@@ -934,6 +961,16 @@ class NativeBrowserDriver:
                             continue
                     except Exception:
                         continue
+
+                if is_separator:
+                    separator_hits += 1
+                    if separator_threshold and separator_hits < separator_threshold:
+                        continue
+                    # 区切り要素自体は結果に含めない
+                    continue
+
+                if separator_threshold and separator_hits < separator_threshold:
+                    continue
 
                 # リスト表示にも AutomationId を追加しておくと特定しやすくなります
                 try:
