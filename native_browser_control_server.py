@@ -485,6 +485,14 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "automation_idで一致させる値",
                     },
+                    "separator": {
+                        "type": "string",
+                        "description": "指定回数出現するまで結果を抑制する区切りとなる名前/コントロールタイプ",
+                    },
+                    "min_separator_count": {
+                        "type": "integer",
+                        "description": "separatorが検知されるまで結果出力を遅らせる回数閾値（デフォルト: 1）",
+                    },
                 }
             ),
         ),
@@ -763,6 +771,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             only_focusable = arguments.get("only_focusable", False)
             index_ranges = arguments.get("index_ranges")
             automation_id = arguments.get("automation_id")
+            separator = arguments.get("separator")
+            min_separator_count = arguments.get("min_separator_count", 1)
 
             result = driver.scan_page_elements(
                 control_type=control_type,
@@ -777,6 +787,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 only_focusable=only_focusable,
                 index_ranges=index_ranges,
                 automation_id=automation_id,
+                separator=separator,
+                min_separator_count=min_separator_count,
             )
             return [TextContent(type="text", text=result if result else "要素が見つかりませんでした")]
 
