@@ -477,13 +477,9 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": "キーボードフォーカス可能な要素のみ（デフォルト: false）",
                     },
-                    "start_index": {
-                        "type": "integer",
-                        "description": "取得開始インデックス（0-based）",
-                    },
-                    "end_index": {
-                        "type": "integer",
-                        "description": "取得終了インデックス（0-based, inclusive）",
+                    "index_ranges": {
+                        "type": "string",
+                        "description": "対象インデックス範囲（例: '1:4,10:-1'。start含む/end除外、負数OK）",
                     },
                     "automation_id": {
                         "type": "string",
@@ -765,8 +761,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             min_width = arguments.get("min_width", 0)
             min_height = arguments.get("min_height", 0)
             only_focusable = arguments.get("only_focusable", False)
-            start_index = arguments.get("start_index", 0)
-            end_index = arguments.get("end_index")
+            index_ranges = arguments.get("index_ranges")
             automation_id = arguments.get("automation_id")
 
             result = driver.scan_page_elements(
@@ -780,8 +775,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 min_width=min_width,
                 min_height=min_height,
                 only_focusable=only_focusable,
-                start_index=start_index,
-                end_index=end_index,
+                index_ranges=index_ranges,
                 automation_id=automation_id,
             )
             return [TextContent(type="text", text=result if result else "要素が見つかりませんでした")]

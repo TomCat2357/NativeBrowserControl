@@ -7,7 +7,7 @@ import re
 import ctypes
 import subprocess
 from dataclasses import dataclass
-from typing import Optional, Literal, Union, Iterable, List
+from typing import Any, Optional, Literal, Union, Iterable, List
 
 from pywinauto import Desktop, Application
 from pywinauto.keyboard import send_keys
@@ -39,6 +39,60 @@ BROWSER_CONFIG = {
         "exe_name": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     },
 }
+
+
+def _parse_index_range_slices(index_ranges: str) -> list[slice]:
+    """
+    例: "1:4,10:-1"
+    - "," 区切り
+    - 各トークンは "start:end"（Pythonのスライスと同等: start含む/end除外, 負数OK）
+    """
+    if index_ranges is None:
+        return []
+
+    tokens = [t.strip() for t in str(index_ranges).split(",") if t.strip()]
+    slices: list[slice] = []
+    for token in tokens:
+        if token.count(":") != 1:
+            raise ValueError(f"index_rangesの形式が不正です: {token!r}（例: '1:4,10:-1'）")
+        start_s, end_s = (p.strip() for p in token.split(":", 1))
+        start = int(start_s) if start_s != "" else None
+        end = int(end_s) if end_s != "" else None
+        slices.append(slice(start, end))
+    return slices
+
+
+def _indices_from_slices(range_slices: list[slice], *, length: int) -> list[int]:
+    if length < 0:
+        raise ValueError("length must be >= 0")
+    if not range_slices:
+        return list(range(length))
+
+    selected: set[int] = set()
+    for sl in range_slices:
+        selected.update(range(*sl.indices(length)))
+    return sorted(selected)
+
+
+def _scan_limit_for_slices(range_slices: list[slice]) -> Optional[int]:
+    """
+    負数や末尾(None)が無い場合のみ、必要なmatched要素数を事前に決めて早期breakできる。
+    """
+    if not range_slices:
+        return None
+
+    max_stop: int | None = 0
+    for sl in range_slices:
+        start = sl.start
+        stop = sl.stop
+        if start is not None and start < 0:
+            return None
+        if stop is None:
+            return None
+        if stop < 0:
+            return None
+        max_stop = max(max_stop or 0, stop)
+    return max_stop
 
 
 def _match_browser_window(
@@ -780,8 +834,7 @@ class NativeBrowserDriver:
         min_width: int = 0,
         min_height: int = 0,
         only_focusable: bool = False,
-        start_index: int = 0,
-        end_index: Optional[int] = None,
+        index_ranges: Optional[str] = None,
         automation_id: Optional[Union[str, Iterable[str]]] = None,
     ):
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
@@ -789,9 +842,14 @@ class NativeBrowserDriver:
         # 毎回フォーカスを奪うとポップアップが消えることがあるので、状況によってはコメントアウトしても良い
         # self.window.set_focus()
 
-        elements_map = {}
-        text_output = []
-        matched_index = 0
+        elements_map: dict[int, Any] = {}
+        text_output: list[str] = []
+
+        range_slices: list[slice] = []
+        scan_limit: Optional[int] = None
+        if index_ranges:
+            range_slices = _parse_index_range_slices(index_ranges)
+            scan_limit = _scan_limit_for_slices(range_slices)
 
         contains_list = None
         if name_contains:
@@ -809,6 +867,8 @@ class NativeBrowserDriver:
         else:
             all_items = self.window.descendants()
 
+        matched_items: list[tuple[Any, str, str, str]] = []
+        truncated = False
         for item in all_items:
             try:
                 # --- 【変更点】 名前取得ロジックの改良 ---
@@ -875,30 +935,36 @@ class NativeBrowserDriver:
                     except Exception:
                         continue
 
-                current_index = matched_index
-                matched_index += 1
-
-                if current_index < start_index:
-                    continue
-                if end_index is not None and current_index > end_index:
-                    break
-
-                elements_map[current_index] = item
-                
                 # リスト表示にも AutomationId を追加しておくと特定しやすくなります
                 try:
                     aid = item.element_info.automation_id
                     aid_str = f" [ID:{aid}]" if aid else ""
-                except:
+                except Exception:
                     aid_str = ""
 
-                text_output.append(f"[{current_index}] <{f_class}> {name}{aid_str}")
+                matched_items.append((item, f_class, name, aid_str))
 
-                if len(elements_map) >= max_elements:
-                    text_output.append("... (more elements truncated)")
+                if scan_limit is not None and len(matched_items) >= scan_limit:
+                    break
+
+                if not index_ranges and len(matched_items) >= max_elements:
+                    truncated = True
                     break
             except Exception:
                 continue
+
+        selected_indices = _indices_from_slices(range_slices, length=len(matched_items))
+        for current_index in selected_indices:
+            if len(elements_map) >= max_elements:
+                truncated = True
+                break
+
+            item, f_class, name, aid_str = matched_items[current_index]
+            elements_map[current_index] = item
+            text_output.append(f"[{current_index}] <{f_class}> {name}{aid_str}")
+
+        if truncated:
+            text_output.append("... (more elements truncated)")
 
         self.current_elements = elements_map
         return "\n".join(text_output)
