@@ -824,8 +824,10 @@ class NativeBrowserDriver:
     def scan_page_elements(
         self,
         control_type=None,
+        title=None,
         max_elements=500,
         *,
+        control_types: Optional[Union[str, Iterable[str]]] = None,
         name_contains: Optional[Union[str, Iterable[str]]] = None,
         name_regex: Optional[str] = None,
         class_name: Optional[str] = None,
@@ -836,13 +838,12 @@ class NativeBrowserDriver:
         only_focusable: bool = False,
         index_ranges: Optional[str] = None,
         automation_id: Optional[Union[str, Iterable[str]]] = None,
-        separator: Optional[str] = None,
-        min_separator_count: int = 1,
+        min_separator_count: int = 2,
+        output_mode: Literal["full", "summary", "silent"] = "full",
     ):
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
 
-        # separator: 出現をトリガーに指定回数までは結果出力を抑制するための境界（名称/コントロールタイプ）。
-        # min_separator_count: separatorがこの回数検知されるまではヒット要素を集計しない。
+        # min_separator_count: "Separator" がこの回数検知されるまではヒット要素を集計しない。
 
         # 毎回フォーカスを奪うとポップアップが消えることがあるので、状況によってはコメントアウトしても良い
         # self.window.set_focus()
@@ -864,18 +865,27 @@ class NativeBrowserDriver:
         if automation_id:
             automation_id_list = [automation_id] if isinstance(automation_id, str) else list(automation_id)
 
+        control_types_list = None
+        if control_types:
+            control_types_list = [control_types] if isinstance(control_types, str) else list(control_types)
+
         compiled_regex = re.compile(name_regex) if name_regex else None
 
-        separator_lower = separator.lower() if separator else None
-        separator_threshold = max(0, int(min_separator_count or 0)) if separator else 0
+
+        # 全要素取得（descendantsのフィルタは、* の前の引数で指定する）
+        descendants_kwargs: dict[str, Any] = {}
+        if control_type is not None:
+            descendants_kwargs["control_type"] = control_type
+        if title is not None:
+            descendants_kwargs["title"] = title
+        all_items = self.window.descendants(**descendants_kwargs) if descendants_kwargs else self.window.descendants()
+
+        separator_threshold = max(0, int(min_separator_count or 0))
+        if control_type is not None or title is not None:
+            separator_threshold = 0
         separator_hits = 0
 
-        # 全要素取得
-        if control_type and not separator:
-            all_items = self.window.descendants(control_type=control_type)
-        else:
-            all_items = self.window.descendants()
-
+        
         matched_items: list[tuple[Any, str, str, str]] = []
         truncated = False
         for item in all_items:
@@ -884,37 +894,48 @@ class NativeBrowserDriver:
                 name = item.window_text()
                 f_class = item.friendly_class_name()
 
-                # 名前が空の場合の特別扱い
+                try:
+                    element_control_type = item.element_info.control_type
+                except Exception:
+                    element_control_type = None
+
+                is_separator = element_control_type == "Separator"
+
+                if is_separator:
+                    separator_hits += 1
+                    continue
+
+                if separator_threshold and separator_hits < separator_threshold:
+                    continue
+
+                # 名前が空の場合の特別扱い（separator判定の後に行う）
                 if not name:
                     # 名前がなくても操作に意味がある要素タイプを許可
                     unnamed_allowed_types = [
-                        "CheckBox", "Button", "RadioButton", "ComboBox", "ListBox",
-                        "Edit", "Slider", "Spinner", "TabItem", "ToggleButton",
-                        "SplitButton", "MenuItem", "Link", "Hyperlink"
+                        "CheckBox",
+                        "Button",
+                        "RadioButton",
+                        "ComboBox",
+                        "ListBox",
+                        "Edit",
+                        "Slider",
+                        "Spinner",
+                        "TabItem",
+                        "ToggleButton",
+                        "SplitButton",
+                        "MenuItem",
+                        "Link",
+                        "Hyperlink",
                     ]
-                    if f_class in unnamed_allowed_types:
-                        name = f"<{f_class}>"
+                    if element_control_type in unnamed_allowed_types:
+                        name = f"<{element_control_type}>"
                     else:
                         continue  # その他の名前なし要素はスキップ
                 # ---------------------------------------
 
-                is_separator = False
-                if separator_lower:
-                    name_lower = name.lower()
-                    try:
-                        control_type_name = item.control_type()
-                    except Exception:
-                        control_type_name = None
-
-                    if (
-                        separator_lower in name_lower
-                        or f_class.lower() == separator_lower
-                        or (isinstance(control_type_name, str) and control_type_name.lower() == separator_lower)
-                    ):
-                        is_separator = True
-
-                if control_type and not (f_class == control_type or is_separator):
-                    continue
+                if control_types_list:
+                    if element_control_type is None or element_control_type not in control_types_list:
+                        continue
 
                 rect = item.rectangle()
                 if rect.height() <= min_height or rect.width() <= min_width:
@@ -962,16 +983,6 @@ class NativeBrowserDriver:
                     except Exception:
                         continue
 
-                if is_separator:
-                    separator_hits += 1
-                    if separator_threshold and separator_hits < separator_threshold:
-                        continue
-                    # 区切り要素自体は結果に含めない
-                    continue
-
-                if separator_threshold and separator_hits < separator_threshold:
-                    continue
-
                 # リスト表示にも AutomationId を追加しておくと特定しやすくなります
                 try:
                     aid = item.element_info.automation_id
@@ -1004,7 +1015,28 @@ class NativeBrowserDriver:
             text_output.append("... (more elements truncated)")
 
         self.current_elements = elements_map
-        return "\n".join(text_output)
+
+        # output_mode に応じて出力を変更
+        if output_mode == "silent":
+            return ""
+        elif output_mode == "summary":
+            # control_type毎の取得数を集計
+            type_counts: dict[str, int] = {}
+            for current_index in selected_indices:
+                if current_index >= len(matched_items):
+                    break
+                item, f_class, name, aid_str = matched_items[current_index]
+                type_counts[f_class] = type_counts.get(f_class, 0) + 1
+
+            summary_lines = [f"Total elements: {len(elements_map)}"]
+            summary_lines.append("Elements by type:")
+            for control_type_name, count in sorted(type_counts.items()):
+                summary_lines.append(f"  {control_type_name}: {count}")
+            if truncated:
+                summary_lines.append("... (more elements truncated)")
+            return "\n".join(summary_lines)
+        else:  # output_mode == "full"
+            return "\n".join(text_output)
 
     def click_by_index(self, index):
         if index in self.current_elements:

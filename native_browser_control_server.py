@@ -485,13 +485,21 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "automation_idで一致させる値",
                     },
-                    "separator": {
-                        "type": "string",
-                        "description": "指定回数出現するまで結果を抑制する区切りとなる名前/コントロールタイプ",
+                    "control_types": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                        "description": "追加フィルタ用コントロールタイプ（複数指定可・OR）",
                     },
                     "min_separator_count": {
                         "type": "integer",
-                        "description": "separatorが検知されるまで結果出力を遅らせる回数閾値（デフォルト: 1）",
+                        "description": "\"Separator\"が検知されるまで結果出力を遅らせる回数閾値（デフォルト: 0）",
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "enum": ["full", "summary", "silent"],
+                        "description": "出力形式（full=全詳細, summary=タイプ別集計, silent=出力なし。デフォルト: full）",
                     },
                 }
             ),
@@ -771,12 +779,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             only_focusable = arguments.get("only_focusable", False)
             index_ranges = arguments.get("index_ranges")
             automation_id = arguments.get("automation_id")
-            separator = arguments.get("separator")
-            min_separator_count = arguments.get("min_separator_count", 1)
+            control_types = arguments.get("control_types")
+            min_separator_count = arguments.get("min_separator_count", 0)
+            output_mode = arguments.get("output_mode", "full")
 
             result = driver.scan_page_elements(
                 control_type=control_type,
                 max_elements=max_elements,
+                control_types=control_types,
                 name_contains=name_contains,
                 name_regex=name_regex,
                 class_name=class_name,
@@ -787,8 +797,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 only_focusable=only_focusable,
                 index_ranges=index_ranges,
                 automation_id=automation_id,
-                separator=separator,
                 min_separator_count=min_separator_count,
+                output_mode=output_mode,
             )
             return [TextContent(type="text", text=result if result else "要素が見つかりませんでした")]
 

@@ -52,6 +52,10 @@ python native_browser_control_server.py
 - 実ブラウザウィンドウを前面化・最大化して操作するため、実行中は手動操作に影響します。
 - ウィンドウが非表示/最小化の場合は自動で復帰を試みますが、DPI 設定や仮想デスクトップ構成によっては座標がずれることがあります。
 - `chrome_scan_elements` 実行後に取得したインデックスを `chrome_click_element` で利用してください。
+  - `output_mode` パラメータで出力形式を選択できます:
+    - `"full"` (デフォルト): 全要素の詳細リスト
+    - `"summary"`: control_type毎の取得数のみ表示
+    - `"silent"`: 出力なし（要素は内部的にスキャンされます）
 
 ## 主要ファイル
 - `native_browser_control_server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
