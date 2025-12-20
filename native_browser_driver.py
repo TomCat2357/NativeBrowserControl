@@ -4,10 +4,11 @@ import sys
 import time
 import io
 import re
+import os
 import ctypes
 import subprocess
 from dataclasses import dataclass
-from typing import Any, Optional, Literal, Union, Iterable, List
+from typing import Any, Optional, Literal, Union, Iterable, List, Callable
 
 from pywinauto import Desktop, Application
 from pywinauto.keyboard import send_keys
@@ -24,6 +25,32 @@ from pywinauto.findwindows import find_windows
 
 desktop = Desktop(backend="uia")
 
+
+def _env_exe_path(env_var: str, *parts: str) -> Optional[str]:
+    base = os.getenv(env_var)
+    if not base:
+        return None
+    return os.path.join(base, *parts)
+
+
+def _default_exe_paths(browser: str) -> list[str]:
+    if browser == "chrome":
+        candidates = [
+            _env_exe_path("ProgramFiles", "Google", "Chrome", "Application", "chrome.exe"),
+            _env_exe_path("ProgramFiles(x86)", "Google", "Chrome", "Application", "chrome.exe"),
+            _env_exe_path("LocalAppData", "Google", "Chrome", "Application", "chrome.exe"),
+        ]
+    elif browser == "edge":
+        candidates = [
+            _env_exe_path("ProgramFiles(x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
+            _env_exe_path("ProgramFiles", "Microsoft", "Edge", "Application", "msedge.exe"),
+            _env_exe_path("LocalAppData", "Microsoft", "Edge", "Application", "msedge.exe"),
+        ]
+    else:
+        candidates = []
+    return [p for p in candidates if p]
+
+
 # ブラウザ別設定
 BROWSER_CONFIG = {
     "chrome": {
@@ -31,12 +58,34 @@ BROWSER_CONFIG = {
         "title_regex": ".*Google Chrome.*",
         "start_command": ["start", "chrome"],
         "exe_name": "chrome.exe",
+        "exe_paths": _default_exe_paths("chrome"),
+        "launch_args": [],
+        "address_bar_title_candidates": [
+            "Address and search bar",
+            "Search or enter web address",
+        ],
+        "address_bar_automation_id_candidates": [
+            "Address and search bar",
+            "address and search bar",
+        ],
+        "address_bar_control_types": ["Edit"],
     },
     "edge": {
         "title_keywords": ["Edge", "Microsoft Edge"],
         "title_regex": ".*Microsoft.*Edge.*",
         "start_command": ["start", "msedge"],
         "exe_name": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        "exe_paths": _default_exe_paths("edge"),
+        "launch_args": [],
+        "address_bar_title_candidates": [
+            "Address and search bar",
+            "Search or enter web address",
+        ],
+        "address_bar_automation_id_candidates": [
+            "Address and search bar",
+            "address and search bar",
+        ],
+        "address_bar_control_types": ["Edit"],
     },
 }
 
@@ -264,7 +313,7 @@ def get_browser_window(
         return matches[0]
 
     if start_if_not_found:
-        subprocess.Popen(config["start_command"], shell=True)
+        _launch_browser_process(config)
         time.sleep(1)
         matches = find_browser_windows(
             browser,
@@ -366,7 +415,7 @@ def launch_browser_driver(
     if not config:
         raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
 
-    subprocess.Popen(config["start_command"], shell=True)
+    _launch_browser_process(config)
     time.sleep(start_delay)
     return NativeBrowserDriver(browser=browser, retries=retries, start_if_not_found=False)
 
@@ -453,6 +502,47 @@ def _set_clipboard_text(text: str) -> None:
 
 
 @dataclass(frozen=True)
+class ActionResult:
+    ok: bool
+    message: str
+    data: Any | None = None
+
+
+def _get_clipboard_text() -> ActionResult:
+    """クリップボードからテキストを取得する"""
+    try:
+        win32clipboard.OpenClipboard()
+        try:
+            text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+            return ActionResult(True, "Clipboard text retrieved", data=text)
+        except Exception as e:
+            return ActionResult(False, f"Error getting clipboard data: {e}")
+        finally:
+            win32clipboard.CloseClipboard()
+    except Exception as e:
+        return ActionResult(False, f"Error opening clipboard: {e}")
+
+
+def wait_until(
+    predicate: Callable[[], bool],
+    timeout_s: float = 2.0,
+    interval_s: float = 0.05,
+) -> bool:
+    """条件を満たすまで待機し、timeout内に満たせなければFalseを返す。"""
+    timeout_s = max(0.0, float(timeout_s))
+    interval_s = max(0.01, float(interval_s))
+    deadline = time.time() + timeout_s
+    while time.time() <= deadline:
+        try:
+            if predicate():
+                return True
+        except Exception:
+            pass
+        time.sleep(interval_s)
+    return False
+
+
+@dataclass(frozen=True)
 class Rect:
     left: int
     top: int
@@ -501,6 +591,22 @@ def _get_process_image_path(pid: int) -> Optional[str]:
         if handle:
             ctypes.windll.kernel32.CloseHandle(handle)
         return None
+
+
+def _launch_browser_process(config: dict[str, Any]) -> None:
+    exe_paths = config.get("exe_paths") or []
+    launch_args = config.get("launch_args") or []
+    for exe in exe_paths:
+        if exe and os.path.exists(exe):
+            subprocess.Popen([exe, *launch_args], shell=False)
+            return
+
+    start_command = config.get("start_command")
+    if start_command:
+        subprocess.Popen(start_command, shell=True)
+        return
+
+    raise RuntimeError("No valid browser launch configuration found.")
 
 
 def _is_probably_blank(img: Image.Image) -> bool:
@@ -698,19 +804,93 @@ class NativeBrowserDriver:
 
         if settle_ms > 0:
             time.sleep(settle_ms / 1000.0)
+
+    def _prepare_for_input(
+        self,
+        maximize: bool,
+        foreground: bool,
+        settle_ms: int,
+        focus: bool = True,
+    ) -> None:
+        self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+        if focus:
+            try:
+                self.window.set_focus()
+            except Exception:
+                pass
+
+    def _prepare_for_read(
+        self,
+        foreground: bool = False,
+        maximize: bool = False,
+        settle_ms: int = 0,
+    ) -> None:
+        if foreground or maximize:
+            self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+        elif settle_ms > 0:
+            time.sleep(settle_ms / 1000.0)
+
+    def _wait_for_clipboard_text(
+        self,
+        previous_text: Optional[str],
+        *,
+        timeout_s: float = 0.8,
+        interval_s: float = 0.05,
+    ) -> ActionResult:
+        latest: dict[str, Optional[str] | bool] = {"text": None, "updated": False}
+
+        def predicate() -> bool:
+            result = _get_clipboard_text()
+            if not result.ok:
+                return False
+            latest["text"] = result.data
+            latest["updated"] = (
+                result.data is not None
+                if previous_text is None
+                else result.data != previous_text
+            )
+            return result.data is not None
+
+        ok = wait_until(predicate, timeout_s=timeout_s, interval_s=interval_s)
+        if not ok:
+            return ActionResult(
+                False,
+                f"Timeout waiting for clipboard text (timeout_s={timeout_s})",
+                data=latest["text"],
+            )
+
+        message = "Clipboard updated" if latest["updated"] else "Clipboard read (update not confirmed)"
+        return ActionResult(True, message, data=latest["text"])
     
     def set_edit_text(self, index: int, text: str) -> str:
         """スキャンした要素のテキストを設定する"""
+        result = self.set_edit_text_result(index, text)
+        return result.message
+
+    def set_edit_text_result(self, index: int, text: str) -> ActionResult:
+        """スキャンした要素のテキストを設定する（ActionResult版）"""
         if index not in self.current_elements:
-            return f"Index {index} not found"
+            return ActionResult(False, f"Index {index} not found")
 
         elem = self.current_elements[index]
 
         try:
+            self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
             elem.set_text(text)
-            return f"Set text for index {index}: {text[:50]}{'...' if len(text) > 50 else ''}"
+            return ActionResult(
+                True,
+                f"Set text for index {index}: {text[:50]}{'...' if len(text) > 50 else ''}",
+            )
         except Exception as e:
-            return f"Failed to set text for index {index}: {e}"
+            return ActionResult(False, f"Failed to set text for index {index}: {e}")
+
+    def set_edit_text_or_raise(self, index: int, text: str) -> None:
+        """スキャンした要素のテキストを設定する（失敗時例外）"""
+        result = self.set_edit_text_result(index, text)
+        if not result.ok:
+            if "not found" in result.message.lower():
+                raise KeyError(result.message)
+            raise RuntimeError(result.message)
 
     def screenshot(
         self,
@@ -795,31 +975,74 @@ class NativeBrowserDriver:
 
         return img
 
-    def navigate(self, url: str):
+    def navigate(self, url: str, timeout_s: float = 5.0, interval_s: float = 0.1):
         """Ctrl+LでURLバーにフォーカスし、クリップボード経由で入力して移動"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
+        previous_url = self.get_address_bar_url()
         send_keys("^l")
-        time.sleep(0.1)
+        wait_until(lambda: self.get_address_bar_url() != "Unknown", timeout_s=1.0, interval_s=0.05)
         _set_clipboard_text(url)
         send_keys("^v")
-        time.sleep(0.1)
         send_keys("{ENTER}")
-        time.sleep(1)
+
+        def _url_changed() -> bool:
+            current = self.get_address_bar_url()
+            if current in ("Unknown", ""):
+                return False
+            return current != previous_url or url in current
+
+        wait_until(_url_changed, timeout_s=timeout_s, interval_s=interval_s)
 
     def get_address_bar_url(self):
         """アドレスバーからURLを取得"""
-        try:
-            address_bar = self.window.descendants(control_type="Edit", title="Address and search bar")[0]
-            return address_bar.get_value()
-        except Exception:
-            edits = self.window.descendants(control_type="Edit")
-            if edits:
+        self._prepare_for_read()
+        config = self._config
+        control_types = config.get("address_bar_control_types") or ["Edit"]
+        id_candidates = config.get("address_bar_automation_id_candidates") or []
+        title_candidates = config.get("address_bar_title_candidates") or []
+
+        for candidate_id in id_candidates:
+            for control_type in control_types:
                 try:
-                    return edits[0].get_value()
+                    items = self.window.descendants(
+                        control_type=control_type,
+                        automation_id=candidate_id,
+                    )
                 except Exception:
-                    pass
-            return "Unknown"
+                    continue
+                for item in items:
+                    try:
+                        return item.get_value()
+                    except Exception:
+                        continue
+
+        for candidate_title in title_candidates:
+            for control_type in control_types:
+                try:
+                    items = self.window.descendants(
+                        control_type=control_type,
+                        title=candidate_title,
+                    )
+                except Exception:
+                    continue
+                for item in items:
+                    try:
+                        return item.get_value()
+                    except Exception:
+                        continue
+
+        for control_type in control_types:
+            try:
+                edits = self.window.descendants(control_type=control_type)
+            except Exception:
+                continue
+            for item in edits:
+                try:
+                    return item.get_value()
+                except Exception:
+                    continue
+
+        return "Unknown"
 
     def scan_page_elements(
         self,
@@ -840,8 +1063,11 @@ class NativeBrowserDriver:
         automation_id: Optional[Union[str, Iterable[str]]] = None,
         min_separator_count: int = 2,
         output_mode: Literal["full", "summary", "silent"] = "full",
+        foreground: bool = False,
+        maximize: bool = False,
+        settle_ms: int = 0,
     ):
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
+        self._prepare_for_read(foreground=foreground, maximize=maximize, settle_ms=settle_ms)
 
         # min_separator_count: "Separator" がこの回数検知されるまではヒット要素を集計しない。
 
@@ -1039,41 +1265,64 @@ class NativeBrowserDriver:
             return "\n".join(text_output)
 
     def click_by_index(self, index):
-        if index in self.current_elements:
-            elem = self.current_elements[index]
+        result = self.click_by_index_result(index)
+        return result.message
+
+    def click_by_index_result(self, index: int) -> ActionResult:
+        if index not in self.current_elements:
+            return ActionResult(False, f"Index {index} not found")
+
+        elem = self.current_elements[index]
+        try:
+            elem.invoke()
+            return ActionResult(True, f"Clicked index {index}", data={"method": "invoke"})
+        except Exception as invoke_error:
             try:
-                elem.invoke()
-            except Exception:
+                self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
                 elem.click_input()
-            return f"Clicked index {index}"
-        return "Index not found"
+                return ActionResult(
+                    True,
+                    f"Clicked index {index}",
+                    data={"method": "click_input", "invoke_error": str(invoke_error)},
+                )
+            except Exception as click_error:
+                return ActionResult(
+                    False,
+                    f"Failed to click index {index}: invoke={invoke_error}; click_input={click_error}",
+                )
+
+    def click_by_index_or_raise(self, index: int) -> None:
+        result = self.click_by_index_result(index)
+        if not result.ok:
+            if "not found" in result.message.lower():
+                raise KeyError(result.message)
+            if "timeout" in result.message.lower():
+                raise TimeoutError(result.message)
+            raise RuntimeError(result.message)
 
     def select_all_and_get_text(self) -> str:
         """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=100)
-        self.window.set_focus()
-        time.sleep(0.1)
+        result = self.select_all_and_get_text_result()
+        if result.ok:
+            return "" if result.data is None else str(result.data)
+        return result.message
 
-        # Ctrl+A で全選択
+    def select_all_and_get_text_result(self) -> ActionResult:
+        """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得（ActionResult版）"""
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=100)
+        previous_result = _get_clipboard_text()
+        previous = previous_result.data if previous_result.ok else None
         send_keys("^a")
-        time.sleep(0.2)
-
-        # Ctrl+C でコピー
         send_keys("^c")
-        time.sleep(0.3)
+        return self._wait_for_clipboard_text(previous, timeout_s=1.2, interval_s=0.05)
 
-        # クリップボードからテキストを取得
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                return text
-            except Exception as e:
-                return f"Error getting clipboard data: {e}"
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:
-            return f"Error opening clipboard: {e}"
+    def select_all_and_get_text_or_raise(self) -> str:
+        result = self.select_all_and_get_text_result()
+        if not result.ok:
+            if "timeout" in result.message.lower():
+                raise TimeoutError(result.message)
+            raise RuntimeError(result.message)
+        return "" if result.data is None else str(result.data)
 
     # ========================================
     # ページスクロール機能
@@ -1243,6 +1492,7 @@ class NativeBrowserDriver:
 
     def get_page_title(self) -> str:
         """現在のページタイトルを取得"""
+        self._prepare_for_read()
         try:
             return self.window.window_text()
         except Exception as e:
@@ -1250,6 +1500,7 @@ class NativeBrowserDriver:
 
     def get_browser_summary(self, max_text_len: int = 50) -> dict[str, object]:
         """現在のブラウザ概要をJSON向けdictで返す（途中出力なし）"""
+        self._prepare_for_read()
 
         def _norm_trunc(value: object) -> str:
             s = "" if value is None else str(value)
@@ -1375,10 +1626,13 @@ class NativeBrowserDriver:
         Ctrl+Uでソースビューを開き、全選択コピーしてHTMLを返す。
         close_after=Trueならソースビューのタブを閉じて元のタブに戻る。
         """
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
         send_keys("^u")
-        time.sleep(wait_seconds)
+        wait_until(
+            lambda: str(self.get_address_bar_url()).startswith("view-source:"),
+            timeout_s=wait_seconds,
+            interval_s=0.1,
+        )
 
         source = self.select_all_and_get_text()
 
@@ -1408,41 +1662,49 @@ class NativeBrowserDriver:
 
     def copy_selected_text(self) -> str:
         """選択済みのテキストをコピーして取得 (Ctrl+C)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^c")
-        time.sleep(0.3)
+        result = self.copy_selected_text_result()
+        if result.ok:
+            return "" if result.data is None else str(result.data)
+        return result.message
 
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                return text
-            except Exception as e:
-                return f"Error getting clipboard data: {e}"
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:
-            return f"Error opening clipboard: {e}"
+    def copy_selected_text_result(self) -> ActionResult:
+        """選択済みのテキストをコピーして取得 (Ctrl+C, ActionResult版)"""
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
+        previous_result = _get_clipboard_text()
+        previous = previous_result.data if previous_result.ok else None
+        send_keys("^c")
+        return self._wait_for_clipboard_text(previous, timeout_s=0.8, interval_s=0.05)
+
+    def copy_selected_text_or_raise(self) -> str:
+        result = self.copy_selected_text_result()
+        if not result.ok:
+            if "timeout" in result.message.lower():
+                raise TimeoutError(result.message)
+            raise RuntimeError(result.message)
+        return "" if result.data is None else str(result.data)
 
     def cut_text(self) -> str:
         """選択済みのテキストをカットして取得 (Ctrl+X)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^x")
-        time.sleep(0.3)
+        result = self.cut_text_result()
+        if result.ok:
+            return "" if result.data is None else str(result.data)
+        return result.message
 
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                return text
-            except Exception as e:
-                return f"Error getting clipboard data: {e}"
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:
-            return f"Error opening clipboard: {e}"
+    def cut_text_result(self) -> ActionResult:
+        """選択済みのテキストをカットして取得 (Ctrl+X, ActionResult版)"""
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
+        previous_result = _get_clipboard_text()
+        previous = previous_result.data if previous_result.ok else None
+        send_keys("^x")
+        return self._wait_for_clipboard_text(previous, timeout_s=0.8, interval_s=0.05)
+
+    def cut_text_or_raise(self) -> str:
+        result = self.cut_text_result()
+        if not result.ok:
+            if "timeout" in result.message.lower():
+                raise TimeoutError(result.message)
+            raise RuntimeError(result.message)
+        return "" if result.data is None else str(result.data)
 
     # ========================================
     # 座標操作
