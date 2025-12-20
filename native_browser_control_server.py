@@ -9,6 +9,7 @@ Seleniumを使用せず、pywinautoを使った直接制御を提供します。
 import argparse
 import asyncio
 import base64
+import json
 from typing import Any
 
 from mcp.server import Server
@@ -24,6 +25,8 @@ from native_browser_driver import (
     NativeBrowserDriver,
     NativeChromeDriver,
     NativeEdgeDriver,
+    NativeBrowserError,
+    UnsupportedBrowserError,
     list_running_browser_drivers,
     launch_browser_driver,
     connect_browser_by_index,
@@ -57,12 +60,38 @@ def build_schema(properties: dict[str, Any] | None = None, required: list[str] |
     return schema
 
 
+def _error_payload(code: str, message: str, data: Any | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"ok": False, "code": code, "message": message}
+    if data is not None:
+        payload["data"] = data
+    return payload
+
+
+def _error_text(code: str, message: str, data: Any | None = None) -> list[TextContent]:
+    payload = _error_payload(code, message, data)
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+
+def _exception_to_error_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, NativeBrowserError):
+        return _error_payload(exc.code, str(exc), exc.data)
+    if isinstance(exc, TimeoutError):
+        return _error_payload("timeout", str(exc))
+    if isinstance(exc, IndexError):
+        return _error_payload("index_out_of_range", str(exc))
+    if isinstance(exc, (KeyError, ValueError, TypeError)):
+        return _error_payload("invalid_input", str(exc))
+    return _error_payload("internal_error", str(exc))
+
+
 def get_driver(browser: str = "chrome", *, start_if_not_found: bool = False) -> NativeBrowserDriver:
     """指定ブラウザのドライバーを取得（起動中のみ）。"""
     key = (browser or "chrome").lower()
     if key not in DRIVER_FACTORIES:
         supported = ", ".join(DRIVER_FACTORIES)
-        raise ValueError(f"Unsupported browser: {browser}. Supported browsers: {supported}")
+        raise UnsupportedBrowserError(
+            f"get_driver: unsupported browser: {browser}. Supported: {supported}"
+        )
 
     cached = _drivers.get(key)
     if cached:
@@ -573,7 +602,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 retries=2,
             )
             if not infos:
-                return [TextContent(type="text", text="起動中の対象ブラウザはありません。")]
+                return [TextContent(type="text", text="No running target browser windows found.")]
 
             lines = [
                 (
@@ -593,10 +622,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
 
             if running:
                 # 既存ブラウザがある場合はインデックス指定で接続
-                try:
-                    driver = connect_browser_by_index(browser, window_index=window_index)
-                except IndexError as e:
-                    return [TextContent(type="text", text=f"Error: {e}")]
+                driver = connect_browser_by_index(browser, window_index=window_index)
                 _drivers[key] = driver
                 return [
                     TextContent(
@@ -638,8 +664,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         elif name == "chrome_get_browser_summary":
             max_text_len = int(arguments.get("max_text_len", 50))
             summary = driver.get_browser_summary(max_text_len=max_text_len)
-            import json
-
             return [
                 TextContent(type="text", text=json.dumps(summary, ensure_ascii=False))
             ]
@@ -800,7 +824,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 min_separator_count=min_separator_count,
                 output_mode=output_mode,
             )
-            return [TextContent(type="text", text=result if result else "要素が見つかりませんでした")]
+            return [TextContent(type="text", text=result if result else "No elements found.")]
 
         elif name == "chrome_click_element":
             index = arguments["index"]
@@ -829,10 +853,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text="クリップボードの内容を貼り付けました")]
 
         else:
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+            return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")
 
     except Exception as e:
-        return [TextContent(type="text", text=f"Error: {str(e)}")]
+        payload = _exception_to_error_payload(e)
+        return _error_text(payload["code"], payload["message"], payload.get("data"))
 
 
 async def run_server():

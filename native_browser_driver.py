@@ -103,7 +103,10 @@ def _parse_index_range_slices(index_ranges: str) -> list[slice]:
     slices: list[slice] = []
     for token in tokens:
         if token.count(":") != 1:
-            raise ValueError(f"index_rangesの形式が不正です: {token!r}（例: '1:4,10:-1'）")
+            raise InvalidInputError(
+                f"parse_index_range_slices: invalid token format: {token!r} (expected 'start:end')",
+                code="invalid_index_ranges",
+            )
         start_s, end_s = (p.strip() for p in token.split(":", 1))
         start = int(start_s) if start_s != "" else None
         end = int(end_s) if end_s != "" else None
@@ -113,7 +116,7 @@ def _parse_index_range_slices(index_ranges: str) -> list[slice]:
 
 def _indices_from_slices(range_slices: list[slice], *, length: int) -> list[int]:
     if length < 0:
-        raise ValueError("length must be >= 0")
+        raise InvalidInputError("indices_from_slices: length must be >= 0", code="invalid_length")
     if not range_slices:
         return list(range(length))
 
@@ -241,7 +244,10 @@ def find_browser_windows(
     """
     config = BROWSER_CONFIG.get(browser)
     if not config:
-        raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+        raise UnsupportedBrowserError(
+            f"find_browser_windows: unsupported browser: {browser}. "
+            f"Supported: {list(BROWSER_CONFIG.keys())}",
+        )
 
     keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
     title_re = title_regex or config.get("title_regex")
@@ -293,7 +299,10 @@ def get_browser_window(
     """
     config = BROWSER_CONFIG.get(browser)
     if not config:
-        raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+        raise UnsupportedBrowserError(
+            f"get_browser_window: unsupported browser: {browser}. "
+            f"Supported: {list(BROWSER_CONFIG.keys())}",
+        )
 
     matches = find_browser_windows(
         browser,
@@ -331,7 +340,7 @@ def get_browser_window(
         if matches:
             return matches[0]
 
-    raise RuntimeError(f"{browser.capitalize()} Window Not Found.")
+    raise WindowNotFoundError(f"get_browser_window: {browser} window not found")
 
 
 def _build_window_info(window, browser: str) -> BrowserWindowInfo:
@@ -413,7 +422,10 @@ def launch_browser_driver(
 
     config = BROWSER_CONFIG.get(browser)
     if not config:
-        raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+        raise UnsupportedBrowserError(
+            f"launch_browser_driver: unsupported browser: {browser}. "
+            f"Supported: {list(BROWSER_CONFIG.keys())}",
+        )
 
     _launch_browser_process(config)
     time.sleep(start_delay)
@@ -439,8 +451,8 @@ def connect_browser_by_index(
         retries: 探索リトライ回数
 
     Raises:
-        RuntimeError: 指定ブラウザが見つからない場合
-        IndexError: 指定インデックスが範囲外の場合
+        WindowNotFoundError: 指定ブラウザが見つからない場合
+        InvalidInputError: 指定インデックスが範囲外の場合
     """
     windows = find_browser_windows(
         browser,
@@ -450,16 +462,18 @@ def connect_browser_by_index(
     )
 
     if not windows:
-        raise RuntimeError(f"{browser.capitalize()} ウィンドウが見つかりません。")
+        raise WindowNotFoundError(f"connect_browser_by_index: no {browser} windows found")
 
-    # Pythonスタイルのインデックス（負のインデックス対応）
+    # Python-style indices (negative indices supported)
     try:
         target_window = windows[window_index]
-    except IndexError:
-        raise IndexError(
-            f"インデックス {window_index} は範囲外です。"
-            f" 利用可能なウィンドウ数: {len(windows)} (インデックス: 0〜{len(windows)-1})"
-        )
+    except IndexError as exc:
+        raise InvalidInputError(
+            "connect_browser_by_index: window_index out of range "
+            f"(index={window_index}, count={len(windows)})",
+            code="index_out_of_range",
+            data={"window_index": window_index, "window_count": len(windows)},
+        ) from exc
 
     # NativeBrowserDriverインスタンスを作成し、指定ウィンドウに接続
     driver = object.__new__(NativeBrowserDriver)
@@ -501,11 +515,88 @@ def _set_clipboard_text(text: str) -> None:
         win32clipboard.CloseClipboard()
 
 
+class NativeBrowserError(Exception):
+    code = "native_browser_error"
+
+    def __init__(self, message: str, *, code: str | None = None, data: Any | None = None):
+        super().__init__(message)
+        self.code = code or self.code
+        self.data = data
+
+    def as_payload(self) -> dict[str, Any]:
+        return {"code": self.code, "message": str(self), "data": self.data}
+
+
+class InvalidInputError(NativeBrowserError):
+    code = "invalid_input"
+
+
+class UnsupportedBrowserError(InvalidInputError):
+    code = "unsupported_browser"
+
+
+class WindowNotFoundError(NativeBrowserError):
+    code = "window_not_found"
+
+
+class ElementNotFoundError(NativeBrowserError):
+    code = "element_not_found"
+
+
+class ClipboardError(NativeBrowserError):
+    code = "clipboard_error"
+
+
+class LaunchError(NativeBrowserError):
+    code = "launch_failed"
+
+
+class ScreenshotError(NativeBrowserError):
+    code = "screenshot_failed"
+
+
+class ExternalApiError(NativeBrowserError):
+    code = "external_api_error"
+
+
+class ActionFailedError(NativeBrowserError):
+    code = "action_failed"
+
+
+class BrowserTimeoutError(NativeBrowserError, TimeoutError):
+    code = "timeout"
+
+
 @dataclass(frozen=True)
 class ActionResult:
     ok: bool
+    code: str
     message: str
     data: Any | None = None
+
+    @staticmethod
+    def success(message: str, *, data: Any | None = None, code: str = "ok") -> "ActionResult":
+        return ActionResult(True, code, message, data=data)
+
+    @staticmethod
+    def failure(code: str, message: str, *, data: Any | None = None) -> "ActionResult":
+        return ActionResult(False, code, message, data=data)
+
+
+def _raise_for_result(result: ActionResult) -> None:
+    if result.ok:
+        return
+
+    if result.code == "element_not_found":
+        raise ElementNotFoundError(result.message, data=result.data)
+    if result.code == "timeout":
+        raise BrowserTimeoutError(result.message, data=result.data)
+    if result.code == "clipboard_error":
+        raise ClipboardError(result.message, data=result.data)
+    if result.code == "invalid_input":
+        raise InvalidInputError(result.message, data=result.data)
+
+    raise ActionFailedError(result.message, data=result.data)
 
 
 def _get_clipboard_text() -> ActionResult:
@@ -514,13 +605,19 @@ def _get_clipboard_text() -> ActionResult:
         win32clipboard.OpenClipboard()
         try:
             text = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-            return ActionResult(True, "Clipboard text retrieved", data=text)
+            return ActionResult.success("clipboard_get: ok", data=text)
         except Exception as e:
-            return ActionResult(False, f"Error getting clipboard data: {e}")
+            return ActionResult.failure(
+                "clipboard_error",
+                f"clipboard_get: failed to read clipboard data: {e}",
+            )
         finally:
             win32clipboard.CloseClipboard()
     except Exception as e:
-        return ActionResult(False, f"Error opening clipboard: {e}")
+        return ActionResult.failure(
+            "clipboard_error",
+            f"clipboard_get: failed to open clipboard: {e}",
+        )
 
 
 def wait_until(
@@ -606,7 +703,7 @@ def _launch_browser_process(config: dict[str, Any]) -> None:
         subprocess.Popen(start_command, shell=True)
         return
 
-    raise RuntimeError("No valid browser launch configuration found.")
+    raise LaunchError("launch_browser_process: no valid browser launch configuration found")
 
 
 def _is_probably_blank(img: Image.Image) -> bool:
@@ -630,7 +727,7 @@ def _capture_by_printwindow(hwnd: int) -> Image.Image:
     rect = _get_window_rect(hwnd)
     w, h = rect.width, rect.height
     if w <= 0 or h <= 0:
-        raise RuntimeError("Window size is invalid (w/h <= 0).")
+        raise ScreenshotError("capture_printwindow: invalid window size (w/h <= 0)")
 
     hwnd_dc = win32gui.GetWindowDC(hwnd)
     mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
@@ -663,14 +760,14 @@ def _capture_by_printwindow(hwnd: int) -> Image.Image:
     win32gui.ReleaseDC(hwnd, hwnd_dc)
 
     if result != 1:
-        raise RuntimeError("PrintWindow failed (returned 0).")
+        raise ScreenshotError("capture_printwindow: PrintWindow failed (returned 0)")
 
     return img
 
 
 def _capture_by_screen_rect(rect: Rect) -> Image.Image:
     if rect.width <= 0 or rect.height <= 0:
-        raise RuntimeError("Rect size is invalid (width/height <= 0).")
+        raise ScreenshotError("capture_screen: invalid rect size (width/height <= 0)")
 
     with mss.mss() as sct:
         monitor = {"left": rect.left, "top": rect.top, "width": rect.width, "height": rect.height}
@@ -727,12 +824,15 @@ class NativeBrowserDriver:
         start_if_not_found: bool = False,
     ):
         if browser not in BROWSER_CONFIG:
-            raise ValueError(f"Unsupported browser: {browser}. Supported: {list(BROWSER_CONFIG.keys())}")
+            raise UnsupportedBrowserError(
+                f"NativeBrowserDriver: unsupported browser: {browser}. "
+                f"Supported: {list(BROWSER_CONFIG.keys())}",
+            )
 
         self.browser = browser
         self._config = BROWSER_CONFIG[browser]
         _enable_dpi_awareness()
-        
+
         self.current_elements = {}
         self.app = None
         self.window = None
@@ -752,7 +852,7 @@ class NativeBrowserDriver:
             retries=retries,
             start_if_not_found=start_if_not_found,
         )
-        
+
         # 2. 取得したウィンドウ情報を元に接続する
         self.connect(found_window)
 
@@ -785,7 +885,7 @@ class NativeBrowserDriver:
         """撮影・操作の成功率を上げるために復帰/最大化/前面化する"""
         hwnd = self.hwnd
         if not win32gui.IsWindow(hwnd):
-            raise RuntimeError("Invalid hwnd (window does not exist).")
+            raise ExternalApiError("ensure_visible: invalid hwnd (window does not exist)")
 
         try:
             if win32gui.IsIconic(hwnd):
@@ -838,10 +938,13 @@ class NativeBrowserDriver:
         interval_s: float = 0.05,
     ) -> ActionResult:
         latest: dict[str, Optional[str] | bool] = {"text": None, "updated": False}
+        last_error: ActionResult | None = None
 
         def predicate() -> bool:
+            nonlocal last_error
             result = _get_clipboard_text()
             if not result.ok:
+                last_error = result
                 return False
             latest["text"] = result.data
             latest["updated"] = (
@@ -853,44 +956,54 @@ class NativeBrowserDriver:
 
         ok = wait_until(predicate, timeout_s=timeout_s, interval_s=interval_s)
         if not ok:
-            return ActionResult(
-                False,
-                f"Timeout waiting for clipboard text (timeout_s={timeout_s})",
+            if last_error and last_error.code == "clipboard_error":
+                return ActionResult.failure(
+                    "clipboard_error",
+                    f"clipboard_wait: {last_error.message}",
+                    data=last_error.data,
+                )
+            return ActionResult.failure(
+                "timeout",
+                f"clipboard_wait: timeout after {timeout_s}s",
                 data=latest["text"],
             )
 
-        message = "Clipboard updated" if latest["updated"] else "Clipboard read (update not confirmed)"
-        return ActionResult(True, message, data=latest["text"])
+        message = "clipboard_wait: updated" if latest["updated"] else "clipboard_wait: read (update not confirmed)"
+        return ActionResult.success(message, data=latest["text"])
     
     def set_edit_text(self, index: int, text: str) -> str:
         """スキャンした要素のテキストを設定する"""
         result = self.set_edit_text_result(index, text)
+        _raise_for_result(result)
         return result.message
 
     def set_edit_text_result(self, index: int, text: str) -> ActionResult:
         """スキャンした要素のテキストを設定する（ActionResult版）"""
         if index not in self.current_elements:
-            return ActionResult(False, f"Index {index} not found")
+            return ActionResult.failure(
+                "element_not_found",
+                f"set_edit_text: element not found (index={index})",
+            )
 
         elem = self.current_elements[index]
 
         try:
             self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
             elem.set_text(text)
-            return ActionResult(
-                True,
-                f"Set text for index {index}: {text[:50]}{'...' if len(text) > 50 else ''}",
+            preview = text[:50] + ("..." if len(text) > 50 else "")
+            return ActionResult.success(
+                f"set_edit_text: ok (index={index}, text={preview})",
             )
         except Exception as e:
-            return ActionResult(False, f"Failed to set text for index {index}: {e}")
+            return ActionResult.failure(
+                "action_failed",
+                f"set_edit_text: failed to set text (index={index}): {e}",
+            )
 
     def set_edit_text_or_raise(self, index: int, text: str) -> None:
         """スキャンした要素のテキストを設定する（失敗時例外）"""
         result = self.set_edit_text_result(index, text)
-        if not result.ok:
-            if "not found" in result.message.lower():
-                raise KeyError(result.message)
-            raise RuntimeError(result.message)
+        _raise_for_result(result)
 
     def screenshot(
         self,
@@ -929,7 +1042,9 @@ class NativeBrowserDriver:
             try:
                 im = _capture_by_printwindow(hwnd)
                 if _is_probably_blank(im):
-                    raise RuntimeError("PrintWindow returned a blank image (probable GPU/occlusion issue).")
+                    raise ScreenshotError(
+                        "screenshot: PrintWindow returned a blank image (possible GPU/occlusion issue)"
+                    )
                 img = im
                 return True
             except Exception as e:
@@ -955,7 +1070,7 @@ class NativeBrowserDriver:
                 ok = try_printwindow()
 
         if not img:
-            raise RuntimeError("Failed to capture screenshot. " + " | ".join(errors))
+            raise ScreenshotError("screenshot: failed to capture screenshot. " + " | ".join(errors))
 
         if file_path:
             save_kwargs = {}
@@ -1266,46 +1381,47 @@ class NativeBrowserDriver:
 
     def click_by_index(self, index):
         result = self.click_by_index_result(index)
+        _raise_for_result(result)
         return result.message
 
     def click_by_index_result(self, index: int) -> ActionResult:
         if index not in self.current_elements:
-            return ActionResult(False, f"Index {index} not found")
+            return ActionResult.failure(
+                "element_not_found",
+                f"click_by_index: element not found (index={index})",
+            )
 
         elem = self.current_elements[index]
         try:
             elem.invoke()
-            return ActionResult(True, f"Clicked index {index}", data={"method": "invoke"})
+            return ActionResult.success(
+                f"click_by_index: ok (index={index})",
+                data={"method": "invoke"},
+            )
         except Exception as invoke_error:
             try:
                 self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
                 elem.click_input()
-                return ActionResult(
-                    True,
-                    f"Clicked index {index}",
+                return ActionResult.success(
+                    f"click_by_index: ok (index={index})",
                     data={"method": "click_input", "invoke_error": str(invoke_error)},
                 )
             except Exception as click_error:
-                return ActionResult(
-                    False,
-                    f"Failed to click index {index}: invoke={invoke_error}; click_input={click_error}",
+                return ActionResult.failure(
+                    "action_failed",
+                    "click_by_index: failed to click "
+                    f"(index={index}): invoke={invoke_error}; click_input={click_error}",
                 )
 
     def click_by_index_or_raise(self, index: int) -> None:
         result = self.click_by_index_result(index)
-        if not result.ok:
-            if "not found" in result.message.lower():
-                raise KeyError(result.message)
-            if "timeout" in result.message.lower():
-                raise TimeoutError(result.message)
-            raise RuntimeError(result.message)
+        _raise_for_result(result)
 
     def select_all_and_get_text(self) -> str:
         """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得"""
         result = self.select_all_and_get_text_result()
-        if result.ok:
-            return "" if result.data is None else str(result.data)
-        return result.message
+        _raise_for_result(result)
+        return "" if result.data is None else str(result.data)
 
     def select_all_and_get_text_result(self) -> ActionResult:
         """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得（ActionResult版）"""
@@ -1318,10 +1434,7 @@ class NativeBrowserDriver:
 
     def select_all_and_get_text_or_raise(self) -> str:
         result = self.select_all_and_get_text_result()
-        if not result.ok:
-            if "timeout" in result.message.lower():
-                raise TimeoutError(result.message)
-            raise RuntimeError(result.message)
+        _raise_for_result(result)
         return "" if result.data is None else str(result.data)
 
     # ========================================
@@ -1391,7 +1504,7 @@ class NativeBrowserDriver:
         elif method == "type":
             send_keys(text, with_spaces=True)
         else:
-            raise ValueError("method must be 'paste' or 'type'.")
+            raise InvalidInputError("type_text: method must be 'paste' or 'type'", code="invalid_method")
 
         time.sleep(0.1)
 
@@ -1496,7 +1609,7 @@ class NativeBrowserDriver:
         try:
             return self.window.window_text()
         except Exception as e:
-            return f"Error getting title: {e}"
+            raise ExternalApiError(f"get_page_title: failed to read window title: {e}") from e
 
     def get_browser_summary(self, max_text_len: int = 50) -> dict[str, object]:
         """現在のブラウザ概要をJSON向けdictで返す（途中出力なし）"""
@@ -1663,9 +1776,8 @@ class NativeBrowserDriver:
     def copy_selected_text(self) -> str:
         """選択済みのテキストをコピーして取得 (Ctrl+C)"""
         result = self.copy_selected_text_result()
-        if result.ok:
-            return "" if result.data is None else str(result.data)
-        return result.message
+        _raise_for_result(result)
+        return "" if result.data is None else str(result.data)
 
     def copy_selected_text_result(self) -> ActionResult:
         """選択済みのテキストをコピーして取得 (Ctrl+C, ActionResult版)"""
@@ -1677,18 +1789,14 @@ class NativeBrowserDriver:
 
     def copy_selected_text_or_raise(self) -> str:
         result = self.copy_selected_text_result()
-        if not result.ok:
-            if "timeout" in result.message.lower():
-                raise TimeoutError(result.message)
-            raise RuntimeError(result.message)
+        _raise_for_result(result)
         return "" if result.data is None else str(result.data)
 
     def cut_text(self) -> str:
         """選択済みのテキストをカットして取得 (Ctrl+X)"""
         result = self.cut_text_result()
-        if result.ok:
-            return "" if result.data is None else str(result.data)
-        return result.message
+        _raise_for_result(result)
+        return "" if result.data is None else str(result.data)
 
     def cut_text_result(self) -> ActionResult:
         """選択済みのテキストをカットして取得 (Ctrl+X, ActionResult版)"""
@@ -1700,10 +1808,7 @@ class NativeBrowserDriver:
 
     def cut_text_or_raise(self) -> str:
         result = self.cut_text_result()
-        if not result.ok:
-            if "timeout" in result.message.lower():
-                raise TimeoutError(result.message)
-            raise RuntimeError(result.message)
+        _raise_for_result(result)
         return "" if result.data is None else str(result.data)
 
     # ========================================
@@ -1760,7 +1865,11 @@ class NativeBrowserDriver:
         with mss.mss() as sct:
             # monitor=0 ですべてのモニター、1以降で個別モニター
             if monitor < 0 or monitor > len(sct.monitors) - 1:
-                raise ValueError(f"Invalid monitor number: {monitor}. Available: 0-{len(sct.monitors) - 1}")
+                raise InvalidInputError(
+                    "capture_full_screen: invalid monitor number "
+                    f"(monitor={monitor}, available=0-{len(sct.monitors) - 1})",
+                    code="invalid_monitor",
+                )
 
             shot = sct.grab(sct.monitors[monitor])
             img = Image.frombytes("RGB", shot.size, shot.rgb)
