@@ -45,17 +45,14 @@ python native_browser_control_server.py
 - スクロール: `chrome_scroll`
 - タブ操作: `chrome_new_tab`, `chrome_close_tab`, `chrome_switch_tab`
 - ブラウザ操作: `chrome_back`, `chrome_forward`, `chrome_refresh`, `chrome_zoom`
-- 座標/要素: `chrome_click`, `chrome_scan_elements`, `chrome_click_element`
+- 座標/要素: `chrome_click`, `chrome_scan_elements`, `chrome_list_elements`, `chrome_elements_summary`, `chrome_click_element`
 - 待機・クリップボード: `chrome_wait`, `chrome_copy_selected`, `chrome_paste`
 
 ## 注意事項
 - 実ブラウザウィンドウを前面化・最大化して操作するため、実行中は手動操作に影響します。
 - ウィンドウが非表示/最小化の場合は自動で復帰を試みますが、DPI 設定や仮想デスクトップ構成によっては座標がずれることがあります。
 - `chrome_scan_elements` 実行後に取得したインデックスを `chrome_click_element` で利用してください。
-  - `output_mode` パラメータで出力形式を選択できます:
-    - `"full"` (デフォルト): 全要素の詳細リスト
-    - `"summary"`: control_type毎の取得数のみ表示
-    - `"silent"`: 出力なし（要素は内部的にスキャンされます）
+  - `chrome_scan_elements` は件数のみ返します。詳細一覧は `chrome_list_elements`、タイプ別集計は `chrome_elements_summary` を使ってください。
 
 ## 主要ファイル
 - `native_browser_control_server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
