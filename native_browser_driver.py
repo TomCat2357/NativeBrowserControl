@@ -1173,7 +1173,7 @@ class NativeBrowserDriver:
         control_types: Optional[Union[str, Iterable[str]]] = None,
         name_contains: Optional[Union[str, Iterable[str]]] = None,
         name_regex: Optional[str] = None,
-        class_name: Optional[str] = None,
+        class_name: Optional[Union[str, Iterable[str]]] = None,
         only_visible: bool = False,
         require_enabled: bool = False,
         min_width: int = 0,
@@ -1213,6 +1213,10 @@ class NativeBrowserDriver:
         control_types_list = None
         if control_types:
             control_types_list = [control_types] if isinstance(control_types, str) else list(control_types)
+
+        class_name_list = None
+        if class_name:
+            class_name_list = [class_name] if isinstance(class_name, str) else list(class_name)
 
         compiled_regex = re.compile(name_regex) if name_regex else None
 
@@ -1309,9 +1313,9 @@ class NativeBrowserDriver:
                     except Exception:
                         continue
 
-                if class_name:
+                if class_name_list:
                     try:
-                        if f_class != class_name:
+                        if f_class not in class_name_list:
                             continue
                     except Exception:
                         continue
