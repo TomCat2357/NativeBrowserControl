@@ -232,8 +232,8 @@ async def list_tools() -> list[Tool]:
     """利用可能なツールのリストを返す"""
     return [
         Tool(
-            name="chrome_list_browser_windows",
-            description="起動中のブラウザウィンドウ一覧を取得します（ドライバー接続先の選択用）。インデックス番号付きで表示されます。",
+            name="list_browser_windows",
+            description="起動中のブラウザウィンドウ一覧を取得します（Chrome/Edge対応、ドライバー接続先の選択用）。インデックス番号付きで表示されます。",
             inputSchema=build_schema(
                 properties={
                     "require_visible": {
@@ -248,8 +248,8 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_connect_browser",
-            description="指定ブラウザに接続します。window_indexで接続先を選択（省略時は0番目、-1で最後）。ブラウザが未起動の場合は起動します。",
+            name="connect_browser",
+            description="指定ブラウザに接続します（Chrome/Edge対応）。window_indexで接続先を選択（省略時は0番目、-1で最後）。ブラウザが未起動の場合は起動します。",
             inputSchema=build_schema(
                 properties={
                     "window_index": {
@@ -261,7 +261,7 @@ async def list_tools() -> list[Tool]:
         ),
         # ナビゲーション
         Tool(
-            name="chrome_navigate",
+            name="navigate",
             description="指定したURLに移動します（Chrome/Edge対応）",
             inputSchema=build_schema(
                 properties={
@@ -271,18 +271,18 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_get_url",
-            description="現在のページのURLを取得します",
+            name="get_url",
+            description="現在のページのURLを取得します（Chrome/Edge対応）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_get_title",
-            description="現在のページのタイトルを取得します",
+            name="get_title",
+            description="現在のページのタイトルを取得します（Chrome/Edge対応）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_get_browser_summary",
-            description="現在のブラウザ概要（URL/タイトル/状態/位置サイズ/descendants統計）をJSONで取得します",
+            name="get_browser_summary",
+            description="現在のブラウザ概要（URL/タイトル/状態/位置サイズ/descendants統計）をJSONで取得します（Chrome/Edge対応）",
             inputSchema=build_schema(
                 properties={
                     "max_text_len": {
@@ -295,8 +295,8 @@ async def list_tools() -> list[Tool]:
 
         # スクリーンショット
         Tool(
-            name="chrome_screenshot",
-            description="ブラウザウィンドウのスクリーンショットを撮影します（base64エンコードされた画像を返します）",
+            name="screenshot",
+            description="ブラウザウィンドウのスクリーンショットを撮影します（Chrome/Edge対応、base64エンコードされた画像を返します）",
             inputSchema=build_schema(
                 properties={
                     "format": {
@@ -314,8 +314,8 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_full_screenshot",
-            description="画面全体のスクリーンショットを撮影します（ブラウザ以外も含む）",
+            name="full_screenshot",
+            description="画面全体のスクリーンショットを撮影します（Chrome/Edge対応、ブラウザ以外も含む）",
             inputSchema=build_schema(
                 properties={
                     "monitor": {
@@ -333,20 +333,20 @@ async def list_tools() -> list[Tool]:
 
         # コンテンツ取得
         Tool(
-            name="chrome_get_page_text",
-            description="現在のページの全テキストを取得します（Ctrl+A, Ctrl+Cで取得）",
+            name="get_page_text",
+            description="現在のページの全テキストを取得します（Chrome/Edge対応、Ctrl+A, Ctrl+Cで取得）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_get_page_source",
-            description="現在のページのHTMLソースを取得します",
+            name="get_page_source",
+            description="現在のページのHTMLソースを取得します（Chrome/Edge対応）",
             inputSchema=build_schema(),
         ),
 
         # テキスト入力
         Tool(
-            name="chrome_type_text",
-            description="フォーカス中の要素にテキストを入力します",
+            name="type_text",
+            description="フォーカス中の要素にテキストを入力します（Chrome/Edge対応）",
             inputSchema=build_schema(
                 properties={
                     "text": {"type": "string", "description": "入力するテキスト"},
@@ -360,8 +360,8 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_find_text",
-            description="ページ内検索を開いてテキストを検索します（Ctrl+F）",
+            name="find_text",
+            description="ページ内検索を開いてテキストを検索します（Chrome/Edge対応、Ctrl+F）",
             inputSchema=build_schema(
                 properties={
                     "text": {"type": "string", "description": "検索するテキスト"},
@@ -372,8 +372,8 @@ async def list_tools() -> list[Tool]:
 
         # スクロール
         Tool(
-            name="chrome_scroll",
-            description="ページをスクロールします",
+            name="scroll",
+            description="ページをスクロールします（Chrome/Edge対応）",
             inputSchema=build_schema(
                 properties={
                     "direction": {
@@ -392,18 +392,18 @@ async def list_tools() -> list[Tool]:
 
         # タブ操作
         Tool(
-            name="chrome_new_tab",
-            description="新しいタブを開きます（Ctrl+T）",
+            name="new_tab",
+            description="新しいタブを開きます（Chrome/Edge対応、Ctrl+T）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_close_tab",
-            description="現在のタブを閉じます（Ctrl+W）",
+            name="close_tab",
+            description="現在のタブを閉じます（Chrome/Edge対応、Ctrl+W）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_switch_tab",
-            description="タブを切り替えます",
+            name="switch_tab",
+            description="タブを切り替えます（Chrome/Edge対応）",
             inputSchema=build_schema(
                 properties={
                     "direction": {
@@ -418,22 +418,22 @@ async def list_tools() -> list[Tool]:
 
         # ブラウザ操作
         Tool(
-            name="chrome_back",
+            name="back",
             description="前のページに戻ります（Alt+←）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_forward",
+            name="forward",
             description="次のページに進みます（Alt+→）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_refresh",
+            name="refresh",
             description="ページをリロードします（F5）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_zoom",
+            name="zoom",
             description="ズーム操作を行います",
             inputSchema=build_schema(
                 properties={
@@ -449,7 +449,7 @@ async def list_tools() -> list[Tool]:
 
         # クリック操作
         Tool(
-            name="chrome_click",
+            name="click",
             description="指定した座標をクリックします（ウィンドウ相対座標）",
             inputSchema=build_schema(
                 properties={
@@ -467,7 +467,7 @@ async def list_tools() -> list[Tool]:
 
         # 要素操作
         Tool(
-            name="chrome_scan_elements",
+            name="scan_elements",
             description="ページ上の要素をスキャンして件数を返します",
             inputSchema=build_schema(
                 properties={
@@ -534,17 +534,17 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_list_elements",
+            name="list_elements",
             description="直近にスキャンした要素を一覧表示します（先にchrome_scan_elementsを実行してください）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_elements_summary",
+            name="elements_summary",
             description="直近にスキャンした要素をタイプ別に集計して表示します（先にchrome_scan_elementsを実行してください）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_click_element",
+            name="click_element",
             description="スキャンした要素をインデックスでクリックします（先にchrome_scan_elementsを実行してください）",
             inputSchema=build_schema(
                 properties={
@@ -557,7 +557,7 @@ async def list_tools() -> list[Tool]:
             ),
         ),
         Tool(
-            name="chrome_set_element_text",
+            name="set_element_text",
             description="スキャンした要素のテキストを設定します（先にchrome_scan_elementsを実行してください）",
             inputSchema=build_schema(
                 properties={
@@ -573,7 +573,7 @@ async def list_tools() -> list[Tool]:
 
         # 待機
         Tool(
-            name="chrome_wait",
+            name="wait",
             description="指定した秒数待機します",
             inputSchema=build_schema(
                 properties={
@@ -584,12 +584,12 @@ async def list_tools() -> list[Tool]:
 
         # クリップボード
         Tool(
-            name="chrome_copy_selected",
+            name="copy_selected",
             description="選択中のテキストをコピーして取得します（Ctrl+C）",
             inputSchema=build_schema(),
         ),
         Tool(
-            name="chrome_paste",
+            name="paste",
             description="クリップボードの内容を貼り付けます（Ctrl+V）",
             inputSchema=build_schema(),
         ),
@@ -602,7 +602,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
     arguments = arguments or {}
     browser = arguments.get("browser", "chrome")
     try:
-        if name == "chrome_list_browser_windows":
+        if name == "list_browser_windows":
             require_visible = bool(arguments.get("require_visible", False))
             exclude_minimized = bool(arguments.get("exclude_minimized", False))
             infos = list_running_browser_drivers(
@@ -625,7 +625,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             ]
             return [TextContent(type="text", text="\n".join(lines))]
 
-        if name == "chrome_connect_browser":
+        if name == "connect_browser":
             key = browser.lower()
             window_index = arguments.get("window_index", 0)
             running = list_running_browser_drivers(browser, retries=1)
@@ -658,20 +658,20 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
 
         driver = get_driver(browser)
         # ナビゲーション
-        if name == "chrome_navigate":
+        if name == "navigate":
             url = arguments["url"]
             driver.navigate(url)
             return [TextContent(type="text", text=f"URLに移動しました: {url}")]
 
-        elif name == "chrome_get_url":
+        elif name == "get_url":
             url = driver.get_address_bar_url()
             return [TextContent(type="text", text=url)]
 
-        elif name == "chrome_get_title":
+        elif name == "get_title":
             title = driver.get_page_title()
             return [TextContent(type="text", text=title)]
 
-        elif name == "chrome_get_browser_summary":
+        elif name == "get_browser_summary":
             max_text_len = int(arguments.get("max_text_len", 50))
             summary = driver.get_browser_summary(max_text_len=max_text_len)
             return [
@@ -679,7 +679,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             ]
 
         # スクリーンショット
-        elif name == "chrome_screenshot":
+        elif name == "screenshot":
             fmt = arguments.get("format", "PNG")
             quality = arguments.get("quality", 90)
             img_bytes = driver.screenshot(
@@ -691,7 +691,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             mime_type = "image/png" if fmt == "PNG" else "image/jpeg"
             return [ImageContent(type="image", data=img_base64, mimeType=mime_type)]
 
-        elif name == "chrome_full_screenshot":
+        elif name == "full_screenshot":
             monitor = arguments.get("monitor", 0)
             fmt = arguments.get("format", "PNG")
             img_bytes = driver.capture_full_screen(
@@ -704,28 +704,28 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [ImageContent(type="image", data=img_base64, mimeType=mime_type)]
 
         # コンテンツ取得
-        elif name == "chrome_get_page_text":
+        elif name == "get_page_text":
             text = driver.select_all_and_get_text()
             return [TextContent(type="text", text=text)]
 
-        elif name == "chrome_get_page_source":
+        elif name == "get_page_source":
             source = driver.get_page_source()
             return [TextContent(type="text", text=source)]
 
         # テキスト入力
-        elif name == "chrome_type_text":
+        elif name == "type_text":
             text = arguments["text"]
             method = arguments.get("method", "paste")
             driver.type_text(text, method=method)
             return [TextContent(type="text", text=f"テキストを入力しました: {text[:50]}{'...' if len(text) > 50 else ''}")]
 
-        elif name == "chrome_find_text":
+        elif name == "find_text":
             text = arguments["text"]
             driver.find_text_on_page(text)
             return [TextContent(type="text", text=f"ページ内検索を開きました: {text}")]
 
         # スクロール
-        elif name == "chrome_scroll":
+        elif name == "scroll":
             direction = arguments["direction"]
             amount = arguments.get("amount", 500)
 
@@ -745,15 +745,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text=f"スクロールしました: {direction}")]
 
         # タブ操作
-        elif name == "chrome_new_tab":
+        elif name == "new_tab":
             driver.new_tab()
             return [TextContent(type="text", text="新しいタブを開きました")]
 
-        elif name == "chrome_close_tab":
+        elif name == "close_tab":
             driver.close_tab()
             return [TextContent(type="text", text="タブを閉じました")]
 
-        elif name == "chrome_switch_tab":
+        elif name == "switch_tab":
             direction = arguments["direction"]
             if direction == "next":
                 driver.next_tab()
@@ -762,19 +762,19 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text=f"タブを切り替えました: {direction}")]
 
         # ブラウザ操作
-        elif name == "chrome_back":
+        elif name == "back":
             driver.back()
             return [TextContent(type="text", text="前のページに戻りました")]
 
-        elif name == "chrome_forward":
+        elif name == "forward":
             driver.forward()
             return [TextContent(type="text", text="次のページに進みました")]
 
-        elif name == "chrome_refresh":
+        elif name == "refresh":
             driver.refresh()
             return [TextContent(type="text", text="ページをリロードしました")]
 
-        elif name == "chrome_zoom":
+        elif name == "zoom":
             action = arguments["action"]
             if action == "in":
                 driver.zoom_in()
@@ -785,7 +785,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text=f"ズーム操作を実行しました: {action}")]
 
         # クリック操作
-        elif name == "chrome_click":
+        elif name == "click":
             x = arguments["x"]
             y = arguments["y"]
             click_type = arguments.get("click_type", "single")
@@ -800,7 +800,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text=f"クリックしました: ({x}, {y}) - {click_type}")]
 
         # 要素操作
-        elif name == "chrome_scan_elements":
+        elif name == "scan_elements":
             control_type = arguments.get("control_type")
             max_elements = arguments.get("max_elements", 500)
             name_contains = arguments.get("name_contains")
@@ -834,37 +834,37 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             )
             return [TextContent(type="text", text=result)]
 
-        elif name == "chrome_list_elements":
+        elif name == "list_elements":
             result = driver.get_current_elements_list()
             return [TextContent(type="text", text=result if result else "No elements found.")]
 
-        elif name == "chrome_elements_summary":
+        elif name == "elements_summary":
             result = driver.get_current_elements_summary()
             return [TextContent(type="text", text=result)]
 
-        elif name == "chrome_click_element":
+        elif name == "click_element":
             index = arguments["index"]
             result = driver.click_by_index(index)
             return [TextContent(type="text", text=result)]
 
-        elif name == "chrome_set_element_text":
+        elif name == "set_element_text":
             index = arguments["index"]
             text = arguments["text"]
             result = driver.set_edit_text(index, text)
             return [TextContent(type="text", text=result)]
 
         # 待機
-        elif name == "chrome_wait":
+        elif name == "wait":
             seconds = arguments.get("seconds", 2)
             driver.wait_for_idle(seconds)
             return [TextContent(type="text", text=f"{seconds}秒待機しました")]
 
         # クリップボード
-        elif name == "chrome_copy_selected":
+        elif name == "copy_selected":
             text = driver.copy_selected_text()
             return [TextContent(type="text", text=text)]
 
-        elif name == "chrome_paste":
+        elif name == "paste":
             driver.paste_from_clipboard()
             return [TextContent(type="text", text="クリップボードの内容を貼り付けました")]
 
