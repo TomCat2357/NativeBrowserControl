@@ -923,6 +923,32 @@ class NativeBrowserDriver:
             except Exception:
                 pass
 
+    def _send_shortcut(
+        self,
+        action: Optional[Callable[[], None]] = None,
+        *,
+        keys: Optional[str] = None,
+        maximize: bool = False,
+        foreground: bool = True,
+        settle_ms: int = 80,
+        focus: bool = True,
+        post_sleep_s: float = 0.0,
+    ) -> None:
+        self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+        if focus:
+            try:
+                self.window.set_focus()
+            except Exception:
+                pass
+
+        if keys:
+            send_keys(keys)
+        if action:
+            action()
+
+        if post_sleep_s > 0:
+            time.sleep(post_sleep_s)
+
     def _prepare_for_read(
         self,
         foreground: bool = False,
@@ -1501,47 +1527,37 @@ class NativeBrowserDriver:
 
     def scroll_down(self, amount: int = 500) -> None:
         """指定したピクセル数だけ下にスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        for _ in range(amount // 100):
-            send_keys("{DOWN}")
-            time.sleep(0.01)
+        def _action() -> None:
+            for _ in range(amount // 100):
+                send_keys("{DOWN}")
+                time.sleep(0.01)
+
+        self._send_shortcut(_action)
 
     def scroll_up(self, amount: int = 500) -> None:
         """指定したピクセル数だけ上にスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        for _ in range(amount // 100):
-            send_keys("{UP}")
-            time.sleep(0.01)
+        def _action() -> None:
+            for _ in range(amount // 100):
+                send_keys("{UP}")
+                time.sleep(0.01)
+
+        self._send_shortcut(_action)
 
     def scroll_to_bottom(self) -> None:
         """ページの最下部までスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^{END}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^{END}", post_sleep_s=0.2)
 
     def scroll_to_top(self) -> None:
         """ページの最上部までスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^{HOME}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^{HOME}", post_sleep_s=0.2)
 
     def page_down(self) -> None:
         """Page Downキーでスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("{PGDN}")
-        time.sleep(0.1)
+        self._send_shortcut(keys="{PGDN}", post_sleep_s=0.1)
 
     def page_up(self) -> None:
         """Page Upキーでスクロール"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("{PGUP}")
-        time.sleep(0.1)
+        self._send_shortcut(keys="{PGUP}", post_sleep_s=0.1)
 
     # ========================================
     # テキスト入力・検索機能
@@ -1581,31 +1597,19 @@ class NativeBrowserDriver:
 
     def new_tab(self) -> None:
         """新しいタブを開く (Ctrl+T)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^t")
-        time.sleep(0.3)
+        self._send_shortcut(keys="^t", post_sleep_s=0.3)
 
     def close_tab(self) -> None:
         """現在のタブを閉じる (Ctrl+W)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^w")
-        time.sleep(0.3)
+        self._send_shortcut(keys="^w", post_sleep_s=0.3)
 
     def next_tab(self) -> None:
         """次のタブに切り替え (Ctrl+Tab)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^{TAB}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^{TAB}", post_sleep_s=0.2)
 
     def previous_tab(self) -> None:
         """前のタブに切り替え (Ctrl+Shift+Tab)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^+{TAB}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^+{TAB}", post_sleep_s=0.2)
 
     # ========================================
     # ブラウザ操作機能
@@ -1613,45 +1617,27 @@ class NativeBrowserDriver:
 
     def back(self) -> None:
         """戻る (Alt+←)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("%{LEFT}")
-        time.sleep(0.5)
+        self._send_shortcut(keys="%{LEFT}", post_sleep_s=0.5)
 
     def forward(self) -> None:
         """進む (Alt+→)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("%{RIGHT}")
-        time.sleep(0.5)
+        self._send_shortcut(keys="%{RIGHT}", post_sleep_s=0.5)
 
     def refresh(self) -> None:
         """ページをリロード (F5)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("{F5}")
-        time.sleep(0.5)
+        self._send_shortcut(keys="{F5}", post_sleep_s=0.5)
 
     def zoom_in(self) -> None:
         """ズームイン (Ctrl++)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^{+}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^{+}", post_sleep_s=0.2)
 
     def zoom_out(self) -> None:
         """ズームアウト (Ctrl+-)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^{-}")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^{-}", post_sleep_s=0.2)
 
     def reset_zoom(self) -> None:
         """ズームをリセット (Ctrl+0)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^0")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^0", post_sleep_s=0.2)
 
     # ========================================
     # 待機・検証機能
@@ -1850,10 +1836,7 @@ class NativeBrowserDriver:
 
     def paste_from_clipboard(self) -> None:
         """クリップボードから貼り付け (Ctrl+V)"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^v")
-        time.sleep(0.2)
+        self._send_shortcut(keys="^v", post_sleep_s=0.2)
 
     def copy_selected_text(self) -> str:
         """選択済みのテキストをコピーして取得 (Ctrl+C)"""
@@ -1899,24 +1882,24 @@ class NativeBrowserDriver:
 
     def click_at_position(self, x: int, y: int) -> None:
         """指定座標をクリック（ウィンドウ相対座標）"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        self.window.click_input(coords=(x, y))
-        time.sleep(0.2)
+        self._send_shortcut(
+            lambda: self.window.click_input(coords=(x, y)),
+            post_sleep_s=0.2,
+        )
 
     def double_click_at_position(self, x: int, y: int) -> None:
         """指定座標をダブルクリック（ウィンドウ相対座標）"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        self.window.double_click_input(coords=(x, y))
-        time.sleep(0.2)
+        self._send_shortcut(
+            lambda: self.window.double_click_input(coords=(x, y)),
+            post_sleep_s=0.2,
+        )
 
     def right_click_at_position(self, x: int, y: int) -> None:
         """指定座標を右クリック（ウィンドウ相対座標）"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        self.window.right_click_input(coords=(x, y))
-        time.sleep(0.2)
+        self._send_shortcut(
+            lambda: self.window.right_click_input(coords=(x, y)),
+            post_sleep_s=0.2,
+        )
 
     # ========================================
     # 全画面スクリーンショット
