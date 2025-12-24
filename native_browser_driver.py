@@ -871,7 +871,6 @@ class NativeBrowserDriver:
         # ウィンドウハンドル (HWND) を使ってウィンドウオブジェクトを生成
         # これにより、ElementAmbiguousError（候補が複数あるエラー）を完全に回避できる
         self.window = self.app.window(handle=target_window.handle)
-        
         self.window.wait("visible", timeout=20)
         print(f"Connected to {self.browser.capitalize()} (PID: {pid}).")
 
@@ -974,7 +973,27 @@ class NativeBrowserDriver:
 
         message = "clipboard_wait: updated" if latest["updated"] else "clipboard_wait: read (update not confirmed)"
         return ActionResult.success(message, data=latest["text"])
-    
+
+    def _perform_clipboard_transfer(
+        self,
+        shortcut: str,
+        *,
+        timeout_s: float = 0.8,
+        settle_ms: int = 80,
+    ) -> ActionResult:
+        """
+        共通のクリップボード転送処理:
+            - 入力準備
+            - 事前クリップボード取得
+            - 指定ショートカット送信
+            - クリップボード更新待機
+        """
+        self._prepare_for_input(maximize=False, foreground=True, settle_ms=settle_ms)
+        previous_result = _get_clipboard_text()
+        previous = previous_result.data if previous_result.ok else None
+        send_keys(shortcut)
+        return self._wait_for_clipboard_text(previous, timeout_s=timeout_s, interval_s=0.05)
+
     def set_edit_text(self, index: int, text: str) -> str:
         """スキャンした要素のテキストを設定する"""
         result = self.set_edit_text_result(index, text)
@@ -1234,7 +1253,6 @@ class NativeBrowserDriver:
             separator_threshold = 0
         separator_hits = 0
 
-        
         matched_items: list[tuple[Any, str, str, Optional[str]]] = []
         truncated = False
         for item in all_items:
@@ -1483,12 +1501,7 @@ class NativeBrowserDriver:
 
     def select_all_and_get_text_result(self) -> ActionResult:
         """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得（ActionResult版）"""
-        self._prepare_for_input(maximize=False, foreground=True, settle_ms=100)
-        previous_result = _get_clipboard_text()
-        previous = previous_result.data if previous_result.ok else None
-        send_keys("^a")
-        send_keys("^c")
-        return self._wait_for_clipboard_text(previous, timeout_s=1.2, interval_s=0.05)
+        return self._perform_clipboard_transfer("^a^c", timeout_s=1.2, settle_ms=100)
 
     def select_all_and_get_text_or_raise(self) -> str:
         result = self.select_all_and_get_text_result()
@@ -1863,11 +1876,7 @@ class NativeBrowserDriver:
 
     def copy_selected_text_result(self) -> ActionResult:
         """選択済みのテキストをコピーして取得 (Ctrl+C, ActionResult版)"""
-        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
-        previous_result = _get_clipboard_text()
-        previous = previous_result.data if previous_result.ok else None
-        send_keys("^c")
-        return self._wait_for_clipboard_text(previous, timeout_s=0.8, interval_s=0.05)
+        return self._perform_clipboard_transfer("^c", timeout_s=0.8, settle_ms=80)
 
     def copy_selected_text_or_raise(self) -> str:
         result = self.copy_selected_text_result()
@@ -1882,11 +1891,7 @@ class NativeBrowserDriver:
 
     def cut_text_result(self) -> ActionResult:
         """選択済みのテキストをカットして取得 (Ctrl+X, ActionResult版)"""
-        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
-        previous_result = _get_clipboard_text()
-        previous = previous_result.data if previous_result.ok else None
-        send_keys("^x")
-        return self._wait_for_clipboard_text(previous, timeout_s=0.8, interval_s=0.05)
+        return self._perform_clipboard_transfer("^x", timeout_s=0.8, settle_ms=80)
 
     def cut_text_or_raise(self) -> str:
         result = self.cut_text_result()
