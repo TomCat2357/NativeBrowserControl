@@ -45,14 +45,15 @@ python native_browser_control_server.py
 - スクロール: `scroll`
 - タブ操作: `new_tab`, `close_tab`, `switch_tab`
 - ブラウザ操作: `back`, `forward`, `refresh`, `zoom`
-- 座標/要素: `click`, `scan_elements`, `list_elements`, `elements_summary`, `click_element`
+- 座標/要素: `click`, `scan_elements`, `filter_elements`, `list_elements`, `elements_summary`, `click_element`
 - 待機・クリップボード: `wait`, `copy_selected`, `paste`
 
 ## 注意事項
 - 実ブラウザウィンドウを前面化・最大化して操作するため、実行中は手動操作に影響します。
 - ウィンドウが非表示/最小化の場合は自動で復帰を試みますが、DPI 設定や仮想デスクトップ構成によっては座標がずれることがあります。
-- `scan_elements` 実行後に取得したインデックスを `click_element` で利用してください。
-  - `scan_elements` は件数のみ返します。詳細一覧は `list_elements`、タイプ別集計は `elements_summary` を使ってください。
+- `scan_elements` ??????????????? `click_element` ??????????
+  - `scan_elements` ??????????????? `filter_elements` ?????????
+  - `filter_elements` ? `output` ? simple/summary/full ????????????? `list_elements` / `elements_summary`??
 
 ## 主要ファイル
 - `native_browser_control_server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。

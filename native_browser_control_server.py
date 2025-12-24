@@ -466,72 +466,104 @@ async def list_tools() -> list[Tool]:
         ),
 
         # 要素操作
+
         Tool(
             name="scan_elements",
-            description="ページ上の要素をスキャンして件数を返します",
+            description="?????????????????????",
             inputSchema=build_schema(
                 properties={
                     "control_type": {
                         "type": "string",
-                        "description": "フィルターするコントロールタイプ（例: Button, Edit, Link）",
+                        "description": "??????????????????: Button, Edit, Link?",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "title???????",
                     },
                     "max_elements": {
                         "type": "integer",
-                        "description": "取得する最大要素数（デフォルト: 500）",
+                        "description": "??????????????? 500?",
                     },
-                    "name_contains": {
-                        "type": "string",
-                        "description": "要素名に含まれるべき文字列（部分一致）",
-                    },
-                    "name_regex": {
-                        "type": "string",
-                        "description": "要素名にマッチする正規表現",
-                    },
+                }
+            ),
+        ),
+        Tool(
+            name="filter_elements",
+            description="????????????????????????????chrome_scan_elements??????????",
+            inputSchema=build_schema(
+                properties={
                     "class_names": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}},
                         ],
-                        "description": "friendly_class_name()で一致させるクラス名（複数指定可）",
-                    },
-                    "only_visible": {
-                        "type": "boolean",
-                        "description": "可視要素のみ取得（デフォルト: false）",
-                    },
-                    "require_enabled": {
-                        "type": "boolean",
-                        "description": "有効な要素のみ取得（デフォルト: false）",
-                    },
-                    "min_width": {
-                        "type": "integer",
-                        "description": "最小幅（ピクセル）",
-                    },
-                    "min_height": {
-                        "type": "integer",
-                        "description": "最小高さ（ピクセル）",
-                    },
-                    "only_focusable": {
-                        "type": "boolean",
-                        "description": "キーボードフォーカス可能な要素のみ（デフォルト: false）",
-                    },
-                    "index_ranges": {
-                        "type": "string",
-                        "description": "対象インデックス範囲（例: '1:4,10:-1'。start含む/end除外、負数OK）",
-                    },
-                    "automation_id": {
-                        "type": "string",
-                        "description": "automation_idで一致させる値",
+                        "description": "friendly_class_name()?????????????????",
                     },
                     "control_types": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}},
                         ],
-                        "description": "追加フィルタ用コントロールタイプ（複数指定可・OR）",
+                        "description": "???????????????????????OR?",
+                    },
+                    "name_contains": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                        "description": "???????????????????",
+                    },
+                    "name_regex": {
+                        "type": "string",
+                        "description": "?????????????",
+                    },
+                    "only_visible": {
+                        "type": "boolean",
+                        "description": "?????????????? false?",
+                    },
+                    "require_enabled": {
+                        "type": "boolean",
+                        "description": "??????????????? false?",
+                    },
+                    "min_width": {
+                        "type": "integer",
+                        "description": "?????????",
+                    },
+                    "min_height": {
+                        "type": "integer",
+                        "description": "??????????",
+                    },
+                    "only_focusable": {
+                        "type": "boolean",
+                        "description": "??????????????????????? false?",
+                    },
+                    "index_ranges": {
+                        "type": "string",
+                        "description": "????????????: '1:4,10:-1'?start??/end?????OK?",
+                    },
+                    "automation_id": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                        "description": "automation_id???????",
+                    },
+                    "omit_no_name": {
+                        "type": "boolean",
+                        "description": "??????????????? true?",
                     },
                     "min_separator_count": {
                         "type": "integer",
-                        "description": "\"Separator\"が検知されるまで結果出力を遅らせる回数閾値（デフォルト: 0）",
+                        "description": "'Separator'??????????????????????????? 0?",
+                    },
+                    "overwrite": {
+                        "type": "boolean",
+                        "description": "???????current_elements???????????? true?",
+                    },
+                    "output": {
+                        "type": "string",
+                        "enum": ["simple", "summary", "full"],
+                        "description": "???????simple=???summary=???????full=????",
                     },
                 }
             ),
@@ -803,12 +835,24 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             return [TextContent(type="text", text=f"クリックしました: ({x}, {y}) - {click_type}")]
 
         # 要素操作
+
         elif name == "scan_elements":
             control_type = arguments.get("control_type")
+            title = arguments.get("title")
             max_elements = arguments.get("max_elements", 500)
+
+            result = driver.scan_page_elements(
+                control_type=control_type,
+                title=title,
+                max_elements=max_elements,
+            )
+            return [TextContent(type="text", text=result)]
+
+        elif name == "filter_elements":
+            class_names = arguments.get("class_names")
+            control_types = arguments.get("control_types")
             name_contains = arguments.get("name_contains")
             name_regex = arguments.get("name_regex")
-            class_names = arguments.get("class_names")
             only_visible = arguments.get("only_visible", False)
             require_enabled = arguments.get("require_enabled", False)
             min_width = arguments.get("min_width", 0)
@@ -816,16 +860,16 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             only_focusable = arguments.get("only_focusable", False)
             index_ranges = arguments.get("index_ranges")
             automation_id = arguments.get("automation_id")
-            control_types = arguments.get("control_types")
+            omit_no_name = arguments.get("omit_no_name", True)
             min_separator_count = arguments.get("min_separator_count", 0)
+            overwrite = arguments.get("overwrite", True)
+            output = arguments.get("output", "simple")
 
-            result = driver.scan_page_elements(
-                control_type=control_type,
-                max_elements=max_elements,
+            result = driver.filter_current_elements(
+                class_names=class_names,
                 control_types=control_types,
                 name_contains=name_contains,
                 name_regex=name_regex,
-                class_names=class_names,
                 only_visible=only_visible,
                 require_enabled=require_enabled,
                 min_width=min_width,
@@ -833,11 +877,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 only_focusable=only_focusable,
                 index_ranges=index_ranges,
                 automation_id=automation_id,
+                omit_no_name=omit_no_name,
                 min_separator_count=min_separator_count,
+                overwrite=overwrite,
+                output=output,
             )
             return [TextContent(type="text", text=result)]
 
         elif name == "list_elements":
+
             result = driver.get_current_elements_list()
             return [TextContent(type="text", text=result if result else "No elements found.")]
 
