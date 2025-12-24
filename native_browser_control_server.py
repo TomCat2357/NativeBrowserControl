@@ -487,9 +487,12 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "要素名にマッチする正規表現",
                     },
-                    "class_name": {
-                        "type": "string",
-                        "description": "friendly_class_name()で一致させるクラス名",
+                    "class_names": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                        "description": "friendly_class_name()で一致させるクラス名（複数指定可）",
                     },
                     "only_visible": {
                         "type": "boolean",
@@ -805,7 +808,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             max_elements = arguments.get("max_elements", 500)
             name_contains = arguments.get("name_contains")
             name_regex = arguments.get("name_regex")
-            class_name = arguments.get("class_name")
+            class_names = arguments.get("class_names")
             only_visible = arguments.get("only_visible", False)
             require_enabled = arguments.get("require_enabled", False)
             min_width = arguments.get("min_width", 0)
@@ -822,7 +825,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 control_types=control_types,
                 name_contains=name_contains,
                 name_regex=name_regex,
-                class_name=class_name,
+                class_names=class_names,
                 only_visible=only_visible,
                 require_enabled=require_enabled,
                 min_width=min_width,
