@@ -84,6 +84,14 @@ def _exception_to_error_payload(exc: Exception) -> dict[str, Any]:
     return _error_payload("internal_error", str(exc))
 
 
+def _normalize_text_payload(payload: Any) -> str:
+    if isinstance(payload, (dict, list)):
+        return json.dumps(payload, ensure_ascii=False)
+    if payload is None:
+        return ""
+    return str(payload)
+
+
 def get_driver(browser: str = "chrome", *, start_if_not_found: bool = False) -> NativeBrowserDriver:
     """指定ブラウザのドライバーを取得（起動中のみ）。"""
     key = (browser or "chrome").lower()
@@ -335,12 +343,58 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="get_page_text",
             description="現在のページの全テキストを取得します（Chrome/Edge対応、Ctrl+A, Ctrl+Cで取得）",
-            inputSchema=build_schema(),
+            inputSchema=build_schema(
+                properties={
+                    "mode": {
+                        "type": "string",
+                        "enum": ["preview", "raw", "cached"],
+                        "description": "取得モード（preview=一部のみ、raw=全体、cached=最後に取得した内容のプレビュー）",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "プレビューの最大文字数（preview/cached時の切り詰め長）",
+                    },
+                }
+            ),
         ),
         Tool(
             name="get_page_source",
             description="現在のページのHTMLソースを取得します（Chrome/Edge対応）",
-            inputSchema=build_schema(),
+            inputSchema=build_schema(
+                properties={
+                    "mode": {
+                        "type": "string",
+                        "enum": ["preview", "raw", "summary", "cached"],
+                        "description": "取得モード（preview=一部のみ、raw=全体、summary=長さとプレビュー、cached=直近取得済みを再利用）",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "プレビューの最大文字数（preview/summary/cached時の切り詰め長）",
+                    },
+                }
+            ),
+        ),
+        Tool(
+            name="get_element_value",
+            description="scan_elementsで取得した要素のvalueを取得します",
+            inputSchema=build_schema(
+                properties={
+                    "index": {
+                        "type": "integer",
+                        "description": "値を取得する要素インデックス（scan_elements結果の番号）",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["preview", "raw"],
+                        "description": "プレビューか生値か",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "プレビュー時の最大文字数",
+                    },
+                },
+                required=["index"],
+            ),
         ),
 
         # テキスト入力
@@ -740,12 +794,48 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
 
         # コンテンツ取得
         elif name == "get_page_text":
-            text = driver.select_all_and_get_text()
-            return [TextContent(type="text", text=text)]
+            mode = arguments.get("mode", "preview")
+            max_length = int(arguments.get("max_length", 500))
+
+            if mode == "cached":
+                text = driver.get_saved_selected_text(
+                    output_mode="preview", preview_length=max_length
+                )
+            else:
+                driver_mode = "raw" if mode == "raw" else "preview"
+                text = driver.select_all_and_get_text(
+                    output_mode=driver_mode, preview_length=max_length
+                )
+
+            return [TextContent(type="text", text=_normalize_text_payload(text))]
 
         elif name == "get_page_source":
-            source = driver.get_page_source()
-            return [TextContent(type="text", text=source)]
+            mode = arguments.get("mode", "preview")
+            max_length = int(arguments.get("max_length", 800))
+
+            if mode == "cached":
+                source = driver.get_saved_page_source(
+                    output_mode="summary", preview_length=max_length
+                )
+            else:
+                driver_mode = mode if mode in {"preview", "raw", "summary"} else "preview"
+                source = driver.get_page_source(
+                    output_mode=driver_mode, preview_length=max_length
+                )
+
+            return [TextContent(type="text", text=_normalize_text_payload(source))]
+
+        elif name == "get_element_value":
+            index = arguments["index"]
+            mode = arguments.get("mode", "preview")
+            max_length = int(arguments.get("max_length", 200))
+            driver_mode = "raw" if mode == "raw" else "preview"
+            value = driver.get_element_value_by_index(
+                index,
+                preview_length=max_length,
+                output_mode=driver_mode,
+            )
+            return [TextContent(type="text", text=_normalize_text_payload(value))]
 
         # テキスト入力
         elif name == "type_text":

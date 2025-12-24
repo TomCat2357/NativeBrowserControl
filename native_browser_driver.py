@@ -840,6 +840,8 @@ class NativeBrowserDriver:
         self.current_elements_truncated = False
         self.app = None
         self.window = None
+        self.last_page_source: Optional[str] = None
+        self.last_selected_text: Optional[str] = None
 
         # 1. まずウィンドウを確実に取得する（なければ起動も含めて get_browser_window が担当）
         found_window = get_browser_window(
@@ -1537,6 +1539,18 @@ class NativeBrowserDriver:
             summary_lines.append("... (more elements truncated)")
         return "\n".join(summary_lines)
 
+    def _preview_text(self, text: Optional[str], *, max_length: int = 500) -> str:
+        if text is None:
+            return ""
+        preview = text[:max_length]
+        return preview + ("..." if len(text) > max_length else "")
+
+    def _store_latest_text(self, *, page_source: Optional[str] = None, selected_text: Optional[str] = None) -> None:
+        if page_source is not None:
+            self.last_page_source = page_source
+        if selected_text is not None:
+            self.last_selected_text = selected_text
+
     def get_current_elements_list(self) -> str:
         info_map = self._ensure_current_elements_info()
         return self._format_elements_list(
@@ -1591,20 +1605,110 @@ class NativeBrowserDriver:
         result = self.click_by_index_result(index)
         _raise_for_result(result)
 
-    def select_all_and_get_text(self) -> str:
-        """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得"""
-        result = self.select_all_and_get_text_result()
+    def get_element_value_by_index(
+        self,
+        index: int,
+        *,
+        preview_length: int = 200,
+        output_mode: Literal["preview", "raw"] = "preview",
+    ) -> str:
+        """スキャン済み要素のvalueを取得"""
+        result = self.get_element_value_by_index_result(
+            index, preview_length=preview_length, output_mode=output_mode
+        )
         _raise_for_result(result)
         return "" if result.data is None else str(result.data)
 
-    def select_all_and_get_text_result(self) -> ActionResult:
+    def get_element_value_by_index_result(
+        self,
+        index: int,
+        *,
+        preview_length: int = 200,
+        output_mode: Literal["preview", "raw"] = "preview",
+    ) -> ActionResult:
+        if index not in self.current_elements:
+            return ActionResult.failure(
+                "element_not_found",
+                f"get_element_value_by_index: element not found (index={index})",
+            )
+        elem = self.current_elements[index]
+        try:
+            value = elem.get_value()
+        except Exception as e:
+            return ActionResult.failure(
+                "action_failed",
+                f"get_element_value_by_index: failed to get value (index={index}): {e}",
+            )
+
+        if output_mode == "raw":
+            return ActionResult.success(
+                f"get_element_value_by_index: ok (index={index})", data=value
+            )
+
+        preview = self._preview_text(str(value) if value is not None else "", max_length=preview_length)
+        return ActionResult.success(
+            f"get_element_value_by_index: ok (preview, index={index})", data=preview
+        )
+
+    def select_all_and_get_text(
+        self,
+        *,
+        output_mode: Literal["preview", "raw"] = "preview",
+        preview_length: int = 500,
+    ) -> str:
+        """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得（プレビューを返却）"""
+        result = self.select_all_and_get_text_result(
+            output_mode=output_mode, preview_length=preview_length
+        )
+        _raise_for_result(result)
+        return "" if result.data is None else str(result.data)
+
+    def select_all_and_get_text_result(
+        self,
+        *,
+        output_mode: Literal["preview", "raw"] = "preview",
+        preview_length: int = 500,
+    ) -> ActionResult:
         """Ctrl+Aで全選択してCtrl+Cでクリップボードにコピーし、テキストを取得（ActionResult版）"""
-        return self._perform_clipboard_transfer("^a^c", timeout_s=1.2, settle_ms=100)
+        result = self._perform_clipboard_transfer("^a^c", timeout_s=1.2, settle_ms=100)
+        if not result.ok:
+            return result
 
-    def select_all_and_get_text_or_raise(self) -> str:
-        result = self.select_all_and_get_text_result()
+        full_text = "" if result.data is None else str(result.data)
+        self._store_latest_text(selected_text=full_text)
+
+        if output_mode == "raw":
+            return ActionResult.success("select_all_and_get_text: ok", data=full_text)
+
+        preview = self._preview_text(full_text, max_length=preview_length)
+        return ActionResult.success(
+            "select_all_and_get_text: ok (preview)",
+            data=preview,
+        )
+
+    def select_all_and_get_text_or_raise(
+        self,
+        *,
+        output_mode: Literal["preview", "raw"] = "preview",
+        preview_length: int = 500,
+    ) -> str:
+        result = self.select_all_and_get_text_result(
+            output_mode=output_mode, preview_length=preview_length
+        )
         _raise_for_result(result)
         return "" if result.data is None else str(result.data)
+
+    def get_saved_selected_text(
+        self,
+        *,
+        output_mode: Literal["preview", "raw"] = "preview",
+        preview_length: int = 500,
+    ) -> str:
+        """直近に取得した選択テキストを返す（取得済みが無い場合は空文字）"""
+        text = self.last_selected_text or ""
+        if output_mode == "raw":
+            return text
+        return self._preview_text(text, max_length=preview_length)
 
     # ========================================
     # ページスクロール機能
@@ -1887,7 +1991,15 @@ class NativeBrowserDriver:
     # ページソース取得
     # ========================================
 
-    def get_page_source(self, *, wait_seconds: float = 1.5, close_after: bool = True, save_path: Optional[str] = None) -> str:
+    def get_page_source(
+        self,
+        *,
+        wait_seconds: float = 1.5,
+        close_after: bool = True,
+        save_path: Optional[str] = None,
+        output_mode: Literal["preview", "raw", "summary"] = "preview",
+        preview_length: int = 800,
+    ) -> Union[str, dict[str, Any]]:
         """
         Ctrl+Uでソースビューを開き、全選択コピーしてHTMLを返す。
         close_after=Trueならソースビューのタブを閉じて元のタブに戻る。
@@ -1900,7 +2012,12 @@ class NativeBrowserDriver:
             interval_s=0.1,
         )
 
-        source = self.select_all_and_get_text()
+        source_result = self.select_all_and_get_text_result(
+            output_mode="raw", preview_length=preview_length
+        )
+        _raise_for_result(source_result)
+        source = "" if source_result.data is None else str(source_result.data)
+        self._store_latest_text(page_source=source)
 
         if save_path and isinstance(source, str):
             with open(save_path, "w", encoding="utf-8") as f:
@@ -1913,7 +2030,38 @@ class NativeBrowserDriver:
                 pass
             time.sleep(0.2)
 
-        return source
+        if output_mode == "raw":
+            return source
+
+        preview = self._preview_text(source, max_length=preview_length)
+        if output_mode == "summary":
+            return {
+                "length": len(source),
+                "preview": preview,
+                "has_more": len(source) > preview_length,
+            }
+
+        return preview
+
+    def get_saved_page_source(
+        self,
+        *,
+        output_mode: Literal["preview", "raw", "summary"] = "preview",
+        preview_length: int = 800,
+    ) -> Union[str, dict[str, Any]]:
+        """直近に取得したページソースを返す"""
+        source = self.last_page_source or ""
+        if output_mode == "raw":
+            return source
+
+        preview = self._preview_text(source, max_length=preview_length)
+        if output_mode == "summary":
+            return {
+                "length": len(source),
+                "preview": preview,
+                "has_more": len(source) > preview_length,
+            }
+        return preview
 
     # ========================================
     # クリップボード操作拡張
