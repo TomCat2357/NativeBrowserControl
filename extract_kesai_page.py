@@ -41,6 +41,62 @@ def extract_static_fields(driver) -> Dict[str, str]:
     return result
 
 
+def extract_attachment_category(driver) -> str:
+    """現在表示されている添付文書の分類名を取得"""
+    try:
+        # Text要素をスキャン
+        driver.scan_page_elements(
+            control_type="Text",
+            max_elements=200,
+            foreground=True,
+            settle_ms=100,
+        )
+
+        # 「添付文書情報」を含む要素を探す
+        driver.filter_current_elements(
+            name_contains="添付文書情報",
+            output="simple",
+            overwrite=True,
+        )
+
+        if driver.current_elements:
+            # 最初の要素のテキストを取得
+            idx = min(driver.current_elements.keys())
+            elem_wrapper = driver.current_elements[idx]
+            return elem_wrapper.window_text()
+    except Exception:
+        pass
+
+    return "添付文書情報"
+
+
+def find_attachment_switch_button(driver) -> Optional[int]:
+    """添付表示切り替えボタンのインデックスを見つける"""
+    try:
+        # Button要素をスキャン
+        driver.scan_page_elements(
+            control_type="Button",
+            max_elements=100,
+            foreground=True,
+            settle_ms=100,
+        )
+
+        # 「添付表示」を含むボタンを探す
+        driver.filter_current_elements(
+            name_contains="添付表示",
+            output="simple",
+            overwrite=True,
+        )
+
+        if driver.current_elements:
+            # 最初のボタンのインデックスを返す
+            return min(driver.current_elements.keys())
+    except Exception:
+        pass
+
+    return None
+
+
 def extract_attachments_from_table(driver) -> List[Dict[str, str]]:
     """
     テーブル形式の添付ファイル情報を抽出
@@ -172,7 +228,7 @@ def extract_edit_fields(driver) -> Dict[str, str]:
 
 def print_kesai_info(static_fields: Dict[str, str],
                      edit_fields: Dict[str, str],
-                     attachments: List[Dict[str, str]]) -> None:
+                     all_attachments: Dict[str, List[Dict[str, str]]]) -> None:
     """抽出した情報を整形して表示"""
     print("\n" + "=" * 80)
     print("決裁確認ページ情報")
@@ -215,14 +271,16 @@ def print_kesai_info(static_fields: Dict[str, str],
         print("\n【コメント】")
         print(f"  {edit_fields['コメント']}")
 
-    # 添付ファイル
-    if attachments:
-        print("\n【収受添付文書情報】")
-        for att in attachments:
-            num = att.get("番号", "")
-            name = att.get("ファイル名", "")
-            ftype = att.get("種類", "")
-            print(f"  {num}. {name} ({ftype})")
+    # 添付ファイル（分類ごとに表示）
+    if all_attachments:
+        for category, attachments in all_attachments.items():
+            if attachments:
+                print(f"\n【{category}】")
+                for att in attachments:
+                    num = att.get("番号", "")
+                    name = att.get("ファイル名", "")
+                    ftype = att.get("種類", "")
+                    print(f"  {num}. {name} ({ftype})")
 
     print("\n" + "=" * 80)
 
@@ -264,31 +322,53 @@ def main() -> int:
         print(f"ERROR: Staticスキャン失敗: {exc}")
         static_fields = {}
 
-    # 1.5. 全要素をスキャン（添付ファイル情報用）
-    print("\n1.5. 全要素をスキャン中（添付ファイル抽出用）...")
-    try:
-        # control_typeを指定せずに全要素をスキャン
-        result = driver.scan_page_elements(
-            max_elements=500,
-            foreground=True,
-            settle_ms=100,
-        )
-        print(f"   {result}")
+    # 1.5. 添付ファイル情報を抽出（複数分類対応）
+    print("\n1.5. 添付ファイル情報を抽出中...")
+    all_attachments = {}
 
-        # class_namesでStatic/Buttonに絞り込む
-        result = driver.filter_current_elements(
-            class_names=["Button", "Static"],
-            output="summary",
-            overwrite=True,
-        )
-        print(f"   フィルタ後: {result}")
+    for attempt in range(2):
+        try:
+            # 現在の添付文書分類を取得
+            category = extract_attachment_category(driver)
+            print(f"   分類: {category}")
 
-        # 添付ファイル情報を抽出
-        attachments = extract_attachments_from_table(driver)
+            # 全要素をスキャン
+            result = driver.scan_page_elements(
+                max_elements=500,
+                foreground=True,
+                settle_ms=100,
+            )
+            print(f"   スキャン: {result}")
 
-    except Exception as exc:
-        print(f"ERROR: 添付ファイルスキャン失敗: {exc}")
-        attachments = []
+            # class_namesでStatic/Buttonに絞り込む
+            result = driver.filter_current_elements(
+                class_names=["Button", "Static"],
+                output="summary",
+                overwrite=True,
+            )
+            print(f"   フィルタ後: {result}")
+
+            # 添付ファイル情報を抽出
+            attachments = extract_attachments_from_table(driver)
+            all_attachments[category] = attachments
+            print(f"   抽出: {len(attachments)}件")
+
+            # 2回目のループ前に切り替えボタンをクリック
+            if attempt == 0:
+                button_idx = find_attachment_switch_button(driver)
+                if button_idx is not None:
+                    print(f"\n   切り替えボタンをクリック...")
+                    driver.click_by_index(button_idx)
+                    import time
+                    time.sleep(1)  # 画面更新待ち
+                else:
+                    print("   切り替えボタンが見つかりません。")
+                    break
+
+        except Exception as exc:
+            print(f"ERROR: 添付ファイルスキャン失敗 (attempt {attempt+1}): {exc}")
+            if attempt == 0:
+                all_attachments = {}
 
     # 2. Edit要素をスキャン
     print("\n2. Edit要素をスキャン中...")
@@ -309,7 +389,7 @@ def main() -> int:
         edit_fields = {}
 
     # 3. 情報を表示
-    print_kesai_info(static_fields, edit_fields, attachments)
+    print_kesai_info(static_fields, edit_fields, all_attachments)
 
     # 4. JSONに保存
     all_data = {
@@ -331,7 +411,7 @@ def main() -> int:
             "備考": edit_fields.get("備考", ""),
             "コメント": edit_fields.get("コメント", ""),
         },
-        "添付ファイル": attachments
+        "添付ファイル": all_attachments
     }
 
     save_to_json(all_data)
