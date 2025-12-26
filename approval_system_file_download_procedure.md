@@ -49,7 +49,7 @@ scan_elements(browser="edge", control_type="Button")
 #### 3-2. 「表示」を含むボタンでフィルタリング
 
 ```
-filter_elements(browser="edge", name_contains="表示", output="full")
+filter_elements(browser="edge", name_regex="表示", output="full")
 ```
 
 結果例：
@@ -79,7 +79,7 @@ scan_elements(browser="edge", control_type="SplitButton")
 #### 4-2. 「保存」を含むボタンでフィルタリング
 
 ```
-filter_elements(browser="edge", name_contains="保存", output="full")
+filter_elements(browser="edge", name_regex="保存", output="full")
 ```
 
 結果例：
@@ -121,10 +121,10 @@ rm "$latest_zip"
 3. list_elements(browser="edge")
 4. click_element(browser="edge", index=0)  # all_checkbox
 5. scan_elements(browser="edge", control_type="Button")
-6. filter_elements(browser="edge", name_contains="表示", output="full")
+6. filter_elements(browser="edge", name_regex="表示", output="full")
 7. click_element(browser="edge", index=4)  # 「表示」ボタン
 8. scan_elements(browser="edge", control_type="SplitButton")
-9. filter_elements(browser="edge", name_contains="保存", output="full")
+9. filter_elements(browser="edge", name_regex="保存", output="full")
 10. click_element(browser="edge", index=0)  # 「保存」ボタン
 ```
 

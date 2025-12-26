@@ -1254,7 +1254,8 @@ class NativeBrowserDriver:
             try:
                 aid = item.element_info.automation_id
             except Exception:
-                aid = None
+                aid = ""
+            aid = "" if aid is None else str(aid)
 
             index = len(elements_map)
             elements_map[index] = item
@@ -1274,8 +1275,8 @@ class NativeBrowserDriver:
         *,
         class_names: Optional[Union[str, Iterable[str]]] = None,
         control_types: Optional[Union[str, Iterable[str]]] = None,
-        name_contains: Optional[Union[str, Iterable[str]]] = None,
         name_regex: Optional[str] = None,
+        value_regex: Optional[str] = None,
         only_visible: bool = False,
         require_enabled: bool = False,
         min_width: int = 0,
@@ -1283,6 +1284,7 @@ class NativeBrowserDriver:
         only_focusable: bool = False,
         index_ranges: Optional[str] = None,
         automation_id: Optional[Union[str, Iterable[str]]] = None,
+        automation_id_regex: Optional[str] = None,
         omit_no_name: bool = True,
         min_separator_count: int = 0,
         overwrite: bool = True,
@@ -1291,10 +1293,6 @@ class NativeBrowserDriver:
         range_slices: list[slice] = []
         if index_ranges:
             range_slices = _parse_index_range_slices(index_ranges)
-
-        contains_list = None
-        if name_contains:
-            contains_list = [name_contains] if isinstance(name_contains, str) else list(name_contains)
 
         automation_id_list = None
         if automation_id:
@@ -1309,11 +1307,15 @@ class NativeBrowserDriver:
             class_names_list = [class_names] if isinstance(class_names, str) else list(class_names)
 
         compiled_regex = re.compile(name_regex) if name_regex else None
+        compiled_value_regex = re.compile(value_regex) if value_regex else None
+        compiled_automation_id_regex = (
+            re.compile(automation_id_regex) if automation_id_regex else None
+        )
 
         separator_threshold = max(0, int(min_separator_count or 0))
         separator_hits = 0
 
-        matched_items: list[tuple[Any, str, str, Optional[str]]] = []
+        matched_items: list[tuple[Any, str, str, str]] = []
         for index in sorted(self.current_elements.keys()):
             item = self.current_elements[index]
             try:
@@ -1334,6 +1336,16 @@ class NativeBrowserDriver:
                 element_control_type = item.element_info.control_type
             except Exception:
                 element_control_type = None
+
+            value = ""
+            if compiled_value_regex:
+                try:
+                    value = item.get_value()
+                except Exception:
+                    value = ""
+                value = "" if value is None else str(value)
+                if not compiled_value_regex.search(value):
+                    continue
 
             try:
                 is_separator = element_control_type == "Separator"
@@ -1404,24 +1416,24 @@ class NativeBrowserDriver:
                     except Exception:
                         continue
 
-                if contains_list and not any(sub in name for sub in contains_list):
-                    continue
-
                 if compiled_regex and not compiled_regex.search(name):
                     continue
 
+                try:
+                    auto_id = item.element_info.automation_id
+                except Exception:
+                    auto_id = ""
+                auto_id = "" if auto_id is None else str(auto_id)
+
                 if automation_id_list:
-                    try:
-                        auto_id = item.element_info.automation_id
-                        if auto_id is None or all(auto_id != aid for aid in automation_id_list):
-                            continue
-                    except Exception:
+                    if all(auto_id != aid for aid in automation_id_list):
                         continue
 
-                try:
-                    aid = item.element_info.automation_id
-                except Exception:
-                    aid = None
+                if compiled_automation_id_regex:
+                    if not compiled_automation_id_regex.search(auto_id):
+                        continue
+
+                aid = auto_id
 
                 matched_items.append((item, f_class, name, aid))
             except Exception:
@@ -1482,7 +1494,8 @@ class NativeBrowserDriver:
             try:
                 aid = item.element_info.automation_id
             except Exception:
-                aid = None
+                aid = ""
+            aid = "" if aid is None else str(aid)
 
             info[index] = {
                 "control_type": str(control_type) if control_type is not None else "Unknown",
@@ -1846,7 +1859,8 @@ class NativeBrowserDriver:
                 try:
                     aid = item.element_info.automation_id
                 except Exception:
-                    aid = None
+                    aid = ""
+                aid = "" if aid is None else str(aid)
 
                 elements_info[index] = {
                     "control_type": control_type,

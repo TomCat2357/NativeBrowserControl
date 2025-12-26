@@ -506,16 +506,13 @@ async def list_tools() -> list[Tool]:
                         ],
                         "description": "???????????????????????OR?",
                     },
-                    "name_contains": {
-                        "oneOf": [
-                            {"type": "string"},
-                            {"type": "array", "items": {"type": "string"}},
-                        ],
-                        "description": "???????????????????",
-                    },
                     "name_regex": {
                         "type": "string",
                         "description": "?????????????",
+                    },
+                    "value_regex": {
+                        "type": "string",
+                        "description": "get_value()?????????????",
                     },
                     "only_visible": {
                         "type": "boolean",
@@ -547,6 +544,10 @@ async def list_tools() -> list[Tool]:
                             {"type": "array", "items": {"type": "string"}},
                         ],
                         "description": "automation_id???????",
+                    },
+                    "automation_id_regex": {
+                        "type": "string",
+                        "description": "automation_id?????",
                     },
                     "omit_no_name": {
                         "type": "boolean",
@@ -851,8 +852,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         elif name == "filter_elements":
             class_names = arguments.get("class_names")
             control_types = arguments.get("control_types")
-            name_contains = arguments.get("name_contains")
             name_regex = arguments.get("name_regex")
+            value_regex = arguments.get("value_regex")
             only_visible = arguments.get("only_visible", False)
             require_enabled = arguments.get("require_enabled", False)
             min_width = arguments.get("min_width", 0)
@@ -860,6 +861,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             only_focusable = arguments.get("only_focusable", False)
             index_ranges = arguments.get("index_ranges")
             automation_id = arguments.get("automation_id")
+            automation_id_regex = arguments.get("automation_id_regex")
             omit_no_name = arguments.get("omit_no_name", True)
             min_separator_count = arguments.get("min_separator_count", 0)
             overwrite = arguments.get("overwrite", True)
@@ -868,8 +870,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             result = driver.filter_current_elements(
                 class_names=class_names,
                 control_types=control_types,
-                name_contains=name_contains,
                 name_regex=name_regex,
+                value_regex=value_regex,
                 only_visible=only_visible,
                 require_enabled=require_enabled,
                 min_width=min_width,
@@ -877,6 +879,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 only_focusable=only_focusable,
                 index_ranges=index_ranges,
                 automation_id=automation_id,
+                automation_id_regex=automation_id_regex,
                 omit_no_name=omit_no_name,
                 min_separator_count=min_separator_count,
                 overwrite=overwrite,

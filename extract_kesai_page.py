@@ -54,7 +54,7 @@ def extract_attachment_category(driver) -> str:
 
         # 「添付文書情報」を含む要素を探す
         driver.filter_current_elements(
-            name_contains="添付文書情報",
+            name_regex="添付文書情報",
             output="simple",
             overwrite=True,
         )
@@ -83,7 +83,7 @@ def find_attachment_switch_button(driver) -> Optional[int]:
 
         # 「添付表示」を含むボタンを探す
         driver.filter_current_elements(
-            name_contains="添付表示",
+            name_regex="添付表示",
             output="simple",
             overwrite=True,
         )
