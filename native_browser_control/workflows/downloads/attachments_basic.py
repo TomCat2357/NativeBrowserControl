@@ -1,35 +1,30 @@
 """
 決裁確認ページから情報を抽出し、添付ファイルをダウンロードして展開するスクリプト
 """
-import sys
+import argparse
+import json
 import subprocess
 import time
-import os
-import json
 from pathlib import Path
-from typing import Dict, List, Any
-from native_browser_driver import NativeEdgeDriver
+from typing import Any, Dict, List
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.workflows.extraction.kesai_page import run_kesai_extraction
 
 
-def extract_kesai_info(save_to_file: bool = False, output_filename: str = "kesai_info.txt") -> str:
-    """extract_kesai_page.pyを実行して出力を取得"""
+def extract_kesai_info(
+    output_target: str = "stdout", save_to_file: bool = False, output_filename: str = "kesai_info.txt"
+) -> str:
+    """決裁ページの情報抽出を実行し、結果を返す。"""
     print("=" * 80)
     print("決裁情報抽出中...")
     print("=" * 80)
 
-    # extract_kesai_page.pyを実行
-    result = subprocess.run(
-        [sys.executable, "extract_kesai_page.py"],
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='replace'
-    )
+    output, exit_code = run_kesai_extraction(output_target)
 
-    output = result.stdout
-
-    # 標準出力に表示
-    print(output)
+    if exit_code != 0:
+        print(f"\n警告: 抽出処理が終了コード {exit_code} で終了しました")
 
     # ファイルに保存（オプション）
     if save_to_file:
@@ -246,24 +241,17 @@ def extract_downloaded_zips(downloads_dir: str, zip_count: int) -> None:
     print("\nZIPファイル処理完了")
 
 
-def main() -> int:
+def main(save_output: bool = False, output_filename: str = "kesai_info.txt", output_target: str = "stdout") -> int:
     """メイン処理"""
     print("決裁ファイル一括ダウンロードスクリプト")
     print("=" * 80)
 
-    # コマンドライン引数の解析
-    save_output = False
-    output_filename = "kesai_info.txt"
-
-    for i, arg in enumerate(sys.argv):
-        if arg == "--save" or arg == "-s":
-            save_output = True
-            # 次の引数がファイル名か確認
-            if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith("-"):
-                output_filename = sys.argv[i + 1]
-
     # 1. 決裁情報を抽出
-    extract_kesai_info(save_to_file=save_output, output_filename=output_filename)
+    extract_kesai_info(
+        output_target=output_target,
+        save_to_file=save_output,
+        output_filename=output_filename,
+    )
 
     # 2. 添付ファイル情報を読み込む
     print("\n" + "=" * 80)
@@ -380,5 +368,26 @@ def main() -> int:
     return 0
 
 
+def cli() -> int:
+    parser = argparse.ArgumentParser(description="決裁添付ファイルを一括ダウンロード")
+    parser.add_argument("--save", "-s", action="store_true", help="決裁情報をファイルへ保存")
+    parser.add_argument(
+        "--output-file",
+        default="kesai_info.txt",
+        help="--save指定時に書き出すファイル名",
+    )
+    add_output_argument(parser)
+    args = parser.parse_args()
+
+    exit_code = 0
+
+    def _task() -> None:
+        nonlocal exit_code
+        exit_code = main(args.save, args.output_file, args.output)
+
+    route_output(_task, args.output)
+    return exit_code
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli())

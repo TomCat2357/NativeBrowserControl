@@ -16,7 +16,9 @@ dependencies = [
 package = true
 
 [tool.setuptools]
-py-modules = ["native_browser_control_server", "native_browser_driver"]
+
+[tool.setuptools.packages.find]
+include = ["native_browser_control*"]
 
 [project.scripts]
-native-browser-control = "native_browser_control_server:main"
+native-browser-control = "native_browser_control.core.server:main"

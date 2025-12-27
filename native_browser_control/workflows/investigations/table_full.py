@@ -2,8 +2,11 @@
 決裁ページの表構造を完全調査
 収受文書情報から「表示」ボタンまでを精査
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_table_full():
     """表構造の完全調査"""
@@ -127,5 +130,19 @@ def investigate_table_full():
     print("調査完了")
     print("=" * 100)
 
+
+def run_table_full(output: str = "stdout") -> str:
+    """表構造の完全調査を指定の出力先で実行する。"""
+
+    return route_output(investigate_table_full, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="決裁ページの表構造を完全調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_table_full(args.output)
+
+
 if __name__ == "__main__":
-    investigate_table_full()
+    main()

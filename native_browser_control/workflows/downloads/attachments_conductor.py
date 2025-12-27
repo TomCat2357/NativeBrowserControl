@@ -2,12 +2,14 @@
 決裁ファイル一括ダウンロードスクリプト v2
 機能を細かく切り分け、コンダクター関数が全体を制御する設計
 """
-import sys
+import argparse
 import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from native_browser_driver import NativeEdgeDriver
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 
 # ================================================================================
@@ -630,5 +632,21 @@ def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> int:
 # エントリーポイント
 # ================================================================================
 
+
+def cli() -> int:
+    parser = argparse.ArgumentParser(description="決裁ファイルを段階的にダウンロード (v2)")
+    add_output_argument(parser)
+    args = parser.parse_args()
+
+    exit_code = 0
+
+    def _task() -> None:
+        nonlocal exit_code
+        exit_code = main_conductor()
+
+    route_output(_task, args.output)
+    return exit_code
+
+
 if __name__ == "__main__":
-    raise SystemExit(main_conductor())
+    raise SystemExit(cli())

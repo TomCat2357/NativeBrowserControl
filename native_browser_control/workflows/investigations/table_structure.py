@@ -1,8 +1,11 @@
 """
 テーブル全体構造を調査
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_table_structure():
     """テーブル全体構造を調査"""
@@ -166,5 +169,19 @@ def investigate_table_structure():
     print("調査完了")
     print("=" * 80)
 
+
+def run_table_structure(output: str = "stdout") -> str:
+    """テーブル構造調査を指定出力先で実行する。"""
+
+    return route_output(investigate_table_structure, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="テーブル全体構造を調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_table_structure(args.output)
+
+
 if __name__ == "__main__":
-    investigate_table_structure()
+    main()

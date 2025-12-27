@@ -1,8 +1,11 @@
 """
 各ファイル行の全要素を詳細調査
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_file_rows():
     """各ファイル行の全要素を調査"""
@@ -107,5 +110,19 @@ def investigate_file_rows():
     print("調査完了")
     print("=" * 80)
 
+
+def run_file_rows(output: str = "stdout") -> str:
+    """ファイル行調査を指定先へ出力しつつ実行する。"""
+
+    return route_output(investigate_file_rows, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="各ファイル行の全要素を調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_file_rows(args.output)
+
+
 if __name__ == "__main__":
-    investigate_file_rows()
+    main()

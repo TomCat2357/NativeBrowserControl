@@ -1,8 +1,11 @@
 """
 全行の全要素を詳細調査
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_all_rows():
     """全行の全要素を詳細調査"""
@@ -116,5 +119,19 @@ def investigate_all_rows():
     print("調査完了")
     print("=" * 100)
 
+
+def run_table_rows_overview(output: str = "stdout") -> str:
+    """全行詳細調査を指定出力先で実行する。"""
+
+    return route_output(investigate_all_rows, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="全行の全要素を詳細に調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_table_rows_overview(args.output)
+
+
 if __name__ == "__main__":
-    investigate_all_rows()
+    main()

@@ -1,8 +1,11 @@
 """
 CheckBoxの周辺要素を調査して「収受添付文書」情報を探すスクリプト
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_surrounding_elements():
     """CheckBoxの周辺要素を調査"""
@@ -132,5 +135,19 @@ def investigate_surrounding_elements():
     print("調査完了")
     print("=" * 80)
 
+
+def run_checkbox_surroundings(output: str = "stdout") -> str:
+    """CheckBox周辺要素調査の出力先を切り替えて実行する。"""
+
+    return route_output(investigate_surrounding_elements, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="CheckBoxの周辺要素を調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_checkbox_surroundings(args.output)
+
+
 if __name__ == "__main__":
-    investigate_surrounding_elements()
+    main()

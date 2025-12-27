@@ -21,7 +21,7 @@ from mcp.types import (
     Resource,
 )
 
-from native_browser_driver import (
+from native_browser_control.core.driver import (
     NativeBrowserDriver,
     NativeChromeDriver,
     NativeEdgeDriver,

@@ -1,8 +1,11 @@
 """
 「収受」「文書」などのキーワードを含む全要素を検索
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def search_keyword():
     """キーワードを含む要素を検索"""
@@ -113,5 +116,19 @@ def search_keyword():
     print("検索完了")
     print("=" * 80)
 
+
+def run_keyword_search(output: str = "stdout") -> str:
+    """キーワード検索結果を指定出力先へ送る。"""
+
+    return route_output(search_keyword, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="指定キーワードを含む要素を検索するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_keyword_search(args.output)
+
+
 if __name__ == "__main__":
-    search_keyword()
+    main()

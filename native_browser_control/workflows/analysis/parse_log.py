@@ -1,7 +1,9 @@
 #%%
-import json
 import argparse
+import json
 import sys
+
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def get_text_from_content(content):
     """
@@ -80,18 +82,23 @@ def main(file_path):
     except Exception as e:
         print(f"エラーが発生しました: {e}", file=sys.stderr)
         return []
+def run_log_parser(file_path: str, output: str = "stdout") -> str:
+    """ログファイルをパースし、結果を指定出力先に返す。"""
+
+    def _task() -> None:
+        sys.stdout.reconfigure(encoding="utf-8")
+        result = main(file_path)
+        for line in result:
+            print(line)
+
+    return route_output(_task, output)
+
+
 #%%
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding='utf-8')
-    # コマンドライン引数の設定
     parser = argparse.ArgumentParser(description="Chatログファイルをパースして表示します")
     parser.add_argument("file_path", help="パースしたいログファイルのパス")
-    
+    add_output_argument(parser)
     args = parser.parse_args()
-    
-    # main関数を実行して結果を取得
-    result = main(args.file_path)
-    # 結果を標準出力に表示（CLI用）
-    for line in result:
-        print(line)
+    run_log_parser(args.file_path, args.output)
 # %%

@@ -1,8 +1,11 @@
 """
 ファイル拡張子要素の周辺を調査
 """
-from native_browser_driver import NativeEdgeDriver
+import argparse
 import time
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 def investigate_file_extensions():
     """ファイル拡張子要素の周辺を調査"""
@@ -94,5 +97,19 @@ def investigate_file_extensions():
     print("調査完了")
     print("=" * 80)
 
+
+def run_file_extension_investigation(output: str = "stdout") -> str:
+    """ファイル拡張子調査を指定の出力先で実行する。"""
+
+    return route_output(investigate_file_extensions, output)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="ファイル拡張子要素の周辺を調査するワークフロー")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    run_file_extension_investigation(args.output)
+
+
 if __name__ == "__main__":
-    investigate_file_extensions()
+    main()

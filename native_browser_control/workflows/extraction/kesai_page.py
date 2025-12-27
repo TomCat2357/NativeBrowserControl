@@ -1,10 +1,12 @@
 """
 決裁確認ページから情報を抽出して再現するスクリプト
 """
-import sys
+import argparse
 import json
-from typing import Dict, List, Any, Optional
-from native_browser_driver import NativeEdgeDriver
+from typing import Any, Dict, List, Optional
+
+from native_browser_control.core.driver import NativeEdgeDriver
+from native_browser_control.utils.output import add_output_argument, route_output
 
 
 def extract_static_fields(driver) -> Dict[str, str]:
@@ -420,5 +422,26 @@ def main() -> int:
     return 0
 
 
+def run_kesai_extraction(output: str = "stdout") -> tuple[str, int]:
+    """抽出結果を指定の出力先へ送出し、ログ文字列と終了コードを返す。"""
+
+    exit_code = 0
+
+    def _task() -> None:
+        nonlocal exit_code
+        exit_code = main()
+
+    log = route_output(_task, output)
+    return log, exit_code
+
+
+def cli() -> int:
+    parser = argparse.ArgumentParser(description="決裁確認ページから情報を抽出")
+    add_output_argument(parser)
+    args = parser.parse_args()
+    _, code = run_kesai_extraction(args.output)
+    return code
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli())
