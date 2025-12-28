@@ -3,7 +3,12 @@ import argparse
 import json
 import sys
 
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    OutputTarget,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+)
 
 def get_text_from_content(content):
     """
@@ -82,7 +87,11 @@ def main(file_path):
     except Exception as e:
         print(f"エラーが発生しました: {e}", file=sys.stderr)
         return []
-def run_log_parser(file_path: str, output: str = "stdout") -> str:
+def run_log_parser(
+    file_path: str,
+    output: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+) -> str:
     """ログファイルをパースし、結果を指定出力先に返す。"""
 
     def _task() -> None:
@@ -91,7 +100,7 @@ def run_log_parser(file_path: str, output: str = "stdout") -> str:
         for line in result:
             print(line)
 
-    return route_output(_task, output)
+    return route_output(_task, output, stderr_target=stderr_output)
 
 
 #%%
@@ -100,5 +109,8 @@ if __name__ == "__main__":
     parser.add_argument("file_path", help="パースしたいログファイルのパス")
     add_output_argument(parser)
     args = parser.parse_args()
-    run_log_parser(args.file_path, args.output)
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+    run_log_parser(args.file_path, stdout_target, stderr_target)
 # %%

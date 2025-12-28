@@ -58,5 +58,5 @@ python native_browser_control_server.py
 ## 主要ファイル
 - `native_browser_control/core/server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
 - `native_browser_control/core/driver.py`: Chrome/Edge UI 自動化ロジック。スクリーンショット、入力、タブ/スクロール操作などを実装。
-- `native_browser_control/workflows/`: 調査・ダウンロード・抽出などのワークフロー群。各スクリプトは `--output` フラグで標準出力/標準エラー/サイレントを切り替え可能。
+- `native_browser_control/workflows/`: 調査・ダウンロード・抽出などのワークフロー群。各スクリプトは `--output` でまとめて、`--stdout` / `--stderr` で個別に出力先 (stdout / stderr / silent) を切り替え可能。
 - `pyproject.toml`: パッケージ/スクリプト定義。

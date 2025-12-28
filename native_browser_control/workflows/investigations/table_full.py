@@ -3,21 +3,32 @@
 収受文書情報から「表示」ボタンまでを精査
 """
 import argparse
+import logging
 import time
 
 from native_browser_control.core.driver import NativeEdgeDriver
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    OutputTarget,
+    WorkflowResult,
+    add_logging_argument,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+    setup_logger,
+)
+
+logger = setup_logger(__name__)
 
 def investigate_table_full():
     """表構造の完全調査"""
-    print("=" * 100)
-    print("決裁ページ表構造完全調査")
-    print("=" * 100)
+    logger.info("=" * 100)
+    logger.info("決裁ページ表構造完全調査")
+    logger.info("=" * 100)
 
     # ブラウザに接続
-    print("\n[1] ブラウザに接続中...")
+    logger.info("[1] ブラウザに接続中...")
     driver = NativeEdgeDriver(retries=2, start_if_not_found=False)
-    print("    接続完了")
+    logger.info("    接続完了")
 
     # CheckBoxの数を確認
     driver.scan_page_elements(control_type="CheckBox", max_elements=50, foreground=True, settle_ms=100)
@@ -131,17 +142,52 @@ def investigate_table_full():
     print("=" * 100)
 
 
-def run_table_full(output: str = "stdout") -> str:
+def run_table_full(
+    output: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+) -> WorkflowResult:
     """表構造の完全調査を指定の出力先で実行する。"""
 
-    return route_output(investigate_table_full, output)
+    result = None
+
+    def _task() -> None:
+        nonlocal result
+        investigate_table_full()
+        result = WorkflowResult(
+            exit_code=0,
+            summary={"status": "completed"}
+        )
+
+    log = route_output(_task, output, stderr_target=stderr_output)
+
+    if result:
+        result.log = log
+
+    return result or WorkflowResult(exit_code=1, summary={"status": "failed"})
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="決裁ページの表構造を完全調査するワークフロー")
     add_output_argument(parser)
+    add_logging_argument(parser)
     args = parser.parse_args()
-    run_table_full(args.output)
+
+    # ログレベルを設定
+    log_level = getattr(logging, args.log_level)
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+    result = run_table_full(stdout_target, stderr_target)
+
+    # サマリーを表示
+    print(f"\n--- Summary ---")
+    print(f"Exit Code: {result.exit_code}")
+    for key, value in result.summary.items():
+        print(f"{key}: {value}")
 
 
 if __name__ == "__main__":

@@ -3,10 +3,21 @@
 """
 import argparse
 import json
+import logging
 from typing import Any, Dict, List, Optional
 
 from native_browser_control.core.driver import NativeEdgeDriver
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    OutputTarget,
+    WorkflowResult,
+    add_logging_argument,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+    setup_logger,
+)
+
+logger = setup_logger(__name__)
 
 
 def extract_static_fields(driver) -> Dict[str, str]:
@@ -294,20 +305,20 @@ def save_to_json(data: Dict[str, Any], filename: str = "kesai_data.json") -> Non
     print(f"\nデータを {filename} に保存しました。")
 
 
-def main() -> int:
-    print("決裁確認ページ情報抽出スクリプト")
-    print("-" * 80)
+def main() -> WorkflowResult:
+    logger.info("決裁確認ページ情報抽出スクリプト")
+    logger.info("-" * 80)
 
     # Edgeに接続
     try:
         driver = NativeEdgeDriver(retries=2, start_if_not_found=False)
-        print("Edgeに接続しました。")
+        logger.info("Edgeに接続しました。")
     except Exception as exc:
-        print(f"ERROR: Edgeに接続できません: {exc}")
-        return 1
+        logger.error(f"Edgeに接続できません: {exc}")
+        return WorkflowResult(exit_code=1, summary={"status": "connection_error", "error": str(exc)})
 
     # 1. Static要素をスキャン
-    print("\n1. Static要素をスキャン中...")
+    logger.info("1. Static要素をスキャン中...")
     try:
         result = driver.scan_page_elements(
             control_type="Text",
@@ -315,24 +326,24 @@ def main() -> int:
             foreground=True,
             settle_ms=100,
         )
-        print(f"   {result}")
+        logger.debug(f"   {result}")
 
         # Static要素から情報抽出
         static_fields = extract_static_fields(driver)
 
     except Exception as exc:
-        print(f"ERROR: Staticスキャン失敗: {exc}")
+        logger.error(f"Staticスキャン失敗: {exc}")
         static_fields = {}
 
     # 1.5. 添付ファイル情報を抽出（複数分類対応）
-    print("\n1.5. 添付ファイル情報を抽出中...")
+    logger.info("1.5. 添付ファイル情報を抽出中...")
     all_attachments = {}
 
     for attempt in range(2):
         try:
             # 現在の添付文書分類を取得
             category = extract_attachment_category(driver)
-            print(f"   分類: {category}")
+            logger.info(f"   分類: {category}")
 
             # 全要素をスキャン
             result = driver.scan_page_elements(
@@ -340,7 +351,7 @@ def main() -> int:
                 foreground=True,
                 settle_ms=100,
             )
-            print(f"   スキャン: {result}")
+            logger.debug(f"   スキャン: {result}")
 
             # class_namesでStatic/Buttonに絞り込む
             result = driver.filter_current_elements(
@@ -348,32 +359,32 @@ def main() -> int:
                 output="summary",
                 overwrite=True,
             )
-            print(f"   フィルタ後: {result}")
+            logger.debug(f"   フィルタ後: {result}")
 
             # 添付ファイル情報を抽出
             attachments = extract_attachments_from_table(driver)
             all_attachments[category] = attachments
-            print(f"   抽出: {len(attachments)}件")
+            logger.info(f"   抽出: {len(attachments)}件")
 
             # 2回目のループ前に切り替えボタンをクリック
             if attempt == 0:
                 button_idx = find_attachment_switch_button(driver)
                 if button_idx is not None:
-                    print(f"\n   切り替えボタンをクリック...")
+                    logger.debug("   切り替えボタンをクリック...")
                     driver.click_by_index(button_idx)
                     import time
                     time.sleep(1)  # 画面更新待ち
                 else:
-                    print("   切り替えボタンが見つかりません。")
+                    logger.warning("   切り替えボタンが見つかりません。")
                     break
 
         except Exception as exc:
-            print(f"ERROR: 添付ファイルスキャン失敗 (attempt {attempt+1}): {exc}")
+            logger.error(f"添付ファイルスキャン失敗 (attempt {attempt+1}): {exc}")
             if attempt == 0:
                 all_attachments = {}
 
     # 2. Edit要素をスキャン
-    print("\n2. Edit要素をスキャン中...")
+    logger.info("2. Edit要素をスキャン中...")
     try:
         result = driver.scan_page_elements(
             control_type="Edit",
@@ -381,13 +392,13 @@ def main() -> int:
             foreground=True,
             settle_ms=100,
         )
-        print(f"   {result}")
+        logger.debug(f"   {result}")
 
         # Edit要素から情報抽出
         edit_fields = extract_edit_fields(driver)
 
     except Exception as exc:
-        print(f"ERROR: Editスキャン失敗: {exc}")
+        logger.error(f"Editスキャン失敗: {exc}")
         edit_fields = {}
 
     # 3. 情報を表示
@@ -418,29 +429,74 @@ def main() -> int:
 
     save_to_json(all_data)
 
-    print("\n抽出完了")
-    return 0
+    logger.info("抽出完了")
+
+    # サマリーを作成
+    total_attachments = sum(len(files) for files in all_attachments.values())
+    summary = {
+        "status": "completed",
+        "static_fields_count": len(static_fields),
+        "edit_fields_count": len(edit_fields),
+        "attachment_categories": len(all_attachments),
+        "total_attachments": total_attachments,
+    }
+
+    return WorkflowResult(exit_code=0, summary=summary)
 
 
-def run_kesai_extraction(output: str = "stdout") -> tuple[str, int]:
+def run_kesai_extraction(
+    output: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+) -> tuple[str, int]:
     """抽出結果を指定の出力先へ送出し、ログ文字列と終了コードを返す。"""
 
-    exit_code = 0
+    result = None
 
     def _task() -> None:
-        nonlocal exit_code
-        exit_code = main()
+        nonlocal result
+        result = main()
 
-    log = route_output(_task, output)
-    return log, exit_code
+    log = route_output(_task, output, stderr_target=stderr_output)
+
+    if result:
+        return log, result.exit_code
+    return log, 1
 
 
 def cli() -> int:
     parser = argparse.ArgumentParser(description="決裁確認ページから情報を抽出")
     add_output_argument(parser)
+    add_logging_argument(parser)
     args = parser.parse_args()
-    _, code = run_kesai_extraction(args.output)
-    return code
+
+    # ログレベルを設定
+    log_level = getattr(logging, args.log_level)
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+
+    result = None
+
+    def _task() -> None:
+        nonlocal result
+        result = main()
+
+    log = route_output(_task, stdout_target, stderr_target=stderr_target)
+
+    if result:
+        result.log = log
+        # サマリーを表示
+        print(f"\n--- Summary ---")
+        print(f"Exit Code: {result.exit_code}")
+        for key, value in result.summary.items():
+            print(f"{key}: {value}")
+        return result.exit_code
+
+    return 1
 
 
 if __name__ == "__main__":

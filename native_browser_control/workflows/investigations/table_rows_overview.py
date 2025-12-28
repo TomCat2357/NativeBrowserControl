@@ -2,10 +2,21 @@
 全行の全要素を詳細調査
 """
 import argparse
+import logging
 import time
 
 from native_browser_control.core.driver import NativeEdgeDriver
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    OutputTarget,
+    WorkflowResult,
+    add_logging_argument,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+    setup_logger,
+)
+
+logger = setup_logger(__name__)
 
 def investigate_all_rows():
     """全行の全要素を詳細調査"""
@@ -120,17 +131,52 @@ def investigate_all_rows():
     print("=" * 100)
 
 
-def run_table_rows_overview(output: str = "stdout") -> str:
+def run_table_rows_overview(
+    output: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+) -> WorkflowResult:
     """全行詳細調査を指定出力先で実行する。"""
 
-    return route_output(investigate_all_rows, output)
+    result = None
+
+    def _task() -> None:
+        nonlocal result
+        investigate_all_rows()
+        result = WorkflowResult(
+            exit_code=0,
+            summary={"status": "completed"}
+        )
+
+    log = route_output(_task, output, stderr_target=stderr_output)
+
+    if result:
+        result.log = log
+
+    return result or WorkflowResult(exit_code=1, summary={"status": "failed"})
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="全行の全要素を詳細に調査するワークフロー")
     add_output_argument(parser)
+    add_logging_argument(parser)
     args = parser.parse_args()
-    run_table_rows_overview(args.output)
+
+    # ログレベルを設定
+    log_level = getattr(logging, args.log_level)
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+    result = run_table_rows_overview(stdout_target, stderr_target)
+
+    # サマリーを表示
+    print(f"\n--- Summary ---")
+    print(f"Exit Code: {result.exit_code}")
+    for key, value in result.summary.items():
+        print(f"{key}: {value}")
 
 
 if __name__ == "__main__":

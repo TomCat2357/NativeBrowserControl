@@ -3,34 +3,48 @@
 """
 import argparse
 import json
+import logging
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, List
 
 from native_browser_control.core.driver import NativeEdgeDriver
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    OutputTarget,
+    WorkflowResult,
+    add_logging_argument,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+    setup_logger,
+)
 from native_browser_control.workflows.extraction.kesai_page import run_kesai_extraction
+
+logger = setup_logger(__name__)
 
 
 def extract_kesai_info(
-    output_target: str = "stdout", save_to_file: bool = False, output_filename: str = "kesai_info.txt"
+    output_target: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+    save_to_file: bool = False,
+    output_filename: str = "kesai_info.txt",
 ) -> str:
     """決裁ページの情報抽出を実行し、結果を返す。"""
-    print("=" * 80)
-    print("決裁情報抽出中...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("決裁情報抽出中...")
+    logger.info("=" * 80)
 
-    output, exit_code = run_kesai_extraction(output_target)
+    output, exit_code = run_kesai_extraction(output_target, stderr_output)
 
     if exit_code != 0:
-        print(f"\n警告: 抽出処理が終了コード {exit_code} で終了しました")
+        logger.warning(f"抽出処理が終了コード {exit_code} で終了しました")
 
     # ファイルに保存（オプション）
     if save_to_file:
         with open(output_filename, "w", encoding="utf-8") as f:
             f.write(output)
-        print(f"\n出力を {output_filename} に保存しました。")
+        logger.info(f"出力を {output_filename} に保存しました。")
 
     return output
 
@@ -42,7 +56,7 @@ def load_attachment_info() -> Dict[str, List[Dict[str, str]]]:
             data = json.load(f)
             return data.get("添付ファイル", {})
     except Exception as exc:
-        print(f"  警告: kesai_data.jsonの読み込みに失敗: {exc}")
+        logger.warning(f"kesai_data.jsonの読み込みに失敗: {exc}")
         return {}
 
 
@@ -68,7 +82,7 @@ def find_attachment_switch_button(driver) -> int:
             # 最初のボタンのインデックスを返す
             return min(driver.current_elements.keys())
     except Exception as exc:
-        print(f"  警告: 添付表示切り替えボタンが見つかりません: {exc}")
+        logger.warning(f"添付表示切り替えボタンが見つかりません: {exc}")
 
     return None
 
@@ -85,12 +99,12 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
         bool: ダウンロード成功したか
     """
     if attachment_count == 0:
-        print("  添付ファイルなし。スキップします。")
+        logger.info("  添付ファイルなし。スキップします。")
         return False
 
     try:
         # 1. CheckBox要素をスキャン
-        print("  1. CheckBox要素をスキャン中...")
+        logger.debug("  1. CheckBox要素をスキャン中...")
         driver.scan_page_elements(
             control_type="CheckBox",
             max_elements=50,
@@ -99,17 +113,17 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
         )
 
         if not driver.current_elements:
-            print("    エラー: CheckBoxが見つかりません")
+            logger.error("    エラー: CheckBoxが見つかりません")
             return False
 
         # 2. all_checkboxをクリック（通常はインデックス0）
-        print("  2. 全選択チェックボックスをクリック...")
+        logger.debug("  2. 全選択チェックボックスをクリック...")
         checkbox_idx = min(driver.current_elements.keys())
         driver.click_by_index(checkbox_idx)
         time.sleep(0.5)
 
         # 3. Button要素をスキャン
-        print("  3. Button要素をスキャン中...")
+        logger.debug("  3. Button要素をスキャン中...")
         driver.scan_page_elements(
             control_type="Button",
             max_elements=100,
@@ -118,7 +132,7 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
         )
 
         # 4. 「表示」ボタンでフィルタリング
-        print("  4. 「表示」ボタンを検索中...")
+        logger.debug("  4. 「表示」ボタンを検索中...")
         driver.filter_current_elements(
             name_regex="表示",
             output="simple",
@@ -138,16 +152,16 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
                 continue
 
         if display_button_idx is None:
-            print("    エラー: 「表示」ボタンが見つかりません")
+            logger.error("    エラー: 「表示」ボタンが見つかりません")
             return False
 
         # 5. 「表示」ボタンをクリック
-        print(f"  5. 「表示」ボタンをクリック (index={display_button_idx})...")
+        logger.debug(f"  5. 「表示」ボタンをクリック (index={display_button_idx})...")
         driver.click_by_index(display_button_idx)
         time.sleep(1.5)  # ダウンロードダイアログが開くまで待機
 
         # 6. SplitButton要素をスキャン
-        print("  6. SplitButton要素をスキャン中...")
+        logger.debug("  6. SplitButton要素をスキャン中...")
         driver.scan_page_elements(
             control_type="SplitButton",
             max_elements=50,
@@ -156,7 +170,7 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
         )
 
         # 7. 「保存」ボタンでフィルタリング
-        print("  7. 「保存」ボタンを検索中...")
+        logger.debug("  7. 「保存」ボタンを検索中...")
         driver.filter_current_elements(
             name_regex="保存",
             output="simple",
@@ -164,20 +178,20 @@ def download_attachments_once(driver, attachment_count: int) -> bool:
         )
 
         if not driver.current_elements:
-            print("    エラー: 「保存」ボタンが見つかりません")
+            logger.error("    エラー: 「保存」ボタンが見つかりません")
             return False
 
         # 8. 「保存」ボタンをクリック
         save_button_idx = min(driver.current_elements.keys())
-        print(f"  8. 「保存」ボタンをクリック (index={save_button_idx})...")
+        logger.debug(f"  8. 「保存」ボタンをクリック (index={save_button_idx})...")
         driver.click_by_index(save_button_idx)
         time.sleep(2)  # ダウンロード開始を待機
 
-        print("  ダウンロード完了")
+        logger.info("  ダウンロード完了")
         return True
 
     except Exception as exc:
-        print(f"  エラー: ダウンロード中にエラーが発生しました: {exc}")
+        logger.error(f"  ダウンロード中にエラーが発生しました: {exc}")
         return False
 
 
@@ -190,12 +204,12 @@ def extract_downloaded_zips(downloads_dir: str, zip_count: int) -> None:
         zip_count: 処理するZIPファイル数
     """
     if zip_count == 0:
-        print("\n  ZIPファイルはありません。展開処理をスキップします。")
+        logger.info("  ZIPファイルはありません。展開処理をスキップします。")
         return
 
-    print("\n" + "=" * 80)
-    print("ZIPファイル展開中...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("ZIPファイル展開中...")
+    logger.info("=" * 80)
 
     downloads_path = Path(downloads_dir)
 
@@ -203,19 +217,19 @@ def extract_downloaded_zips(downloads_dir: str, zip_count: int) -> None:
     zip_files = sorted(downloads_path.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
 
     if not zip_files:
-        print("  ZIPファイルが見つかりません")
+        logger.warning("  ZIPファイルが見つかりません")
         return
 
     # 指定された数のZIPファイルを処理
     zip_files_to_process = zip_files[:zip_count]
 
-    print(f"  処理するZIPファイル: {len(zip_files_to_process)}件")
+    logger.info(f"  処理するZIPファイル: {len(zip_files_to_process)}件")
     for zip_file in zip_files_to_process:
-        print(f"    - {zip_file.name}")
+        logger.info(f"    - {zip_file.name}")
 
     # 各ZIPファイルを展開
     for zip_file in zip_files_to_process:
-        print(f"\n  展開中: {zip_file.name}")
+        logger.info(f"  展開中: {zip_file.name}")
 
         # PowerShellで展開（日本語ファイル名対応）
         ps_command = f"Expand-Archive -Path '{zip_file}' -DestinationPath '{downloads_path}' -Force"
@@ -227,42 +241,51 @@ def extract_downloaded_zips(downloads_dir: str, zip_count: int) -> None:
         )
 
         if result.returncode == 0:
-            print(f"    展開完了: {zip_file.name}")
+            logger.info(f"    展開完了: {zip_file.name}")
 
             # ZIPファイルを削除
             try:
                 zip_file.unlink()
-                print(f"    削除完了: {zip_file.name}")
+                logger.info(f"    削除完了: {zip_file.name}")
             except Exception as exc:
-                print(f"    警告: ZIPファイルの削除に失敗: {exc}")
+                logger.warning(f"    ZIPファイルの削除に失敗: {exc}")
         else:
-            print(f"    エラー: 展開に失敗: {result.stderr}")
+            logger.error(f"    展開に失敗: {result.stderr}")
 
-    print("\nZIPファイル処理完了")
+    logger.info("ZIPファイル処理完了")
 
 
-def main(save_output: bool = False, output_filename: str = "kesai_info.txt", output_target: str = "stdout") -> int:
+def main(
+    save_output: bool = False,
+    output_filename: str = "kesai_info.txt",
+    output_target: OutputTarget = "stdout",
+    stderr_output: OutputTarget | None = None,
+) -> WorkflowResult:
     """メイン処理"""
-    print("決裁ファイル一括ダウンロードスクリプト")
-    print("=" * 80)
+    logger.info("決裁ファイル一括ダウンロードスクリプト")
+    logger.info("=" * 80)
 
     # 1. 決裁情報を抽出
     extract_kesai_info(
         output_target=output_target,
+        stderr_output=stderr_output,
         save_to_file=save_output,
         output_filename=output_filename,
     )
 
     # 2. 添付ファイル情報を読み込む
-    print("\n" + "=" * 80)
-    print("添付ファイル情報を確認中...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("添付ファイル情報を確認中...")
+    logger.info("=" * 80)
 
     attachment_info = load_attachment_info()
 
     if not attachment_info:
-        print("  添付ファイル情報が見つかりません。処理を終了します。")
-        return 0
+        logger.warning("  添付ファイル情報が見つかりません。処理を終了します。")
+        return WorkflowResult(
+            exit_code=0,
+            summary={"status": "no_attachments", "categories": {}}
+        )
 
     # カテゴリごとの添付ファイル数をリストアップ
     categories = list(attachment_info.keys())
@@ -272,70 +295,77 @@ def main(save_output: bool = False, output_filename: str = "kesai_info.txt", out
         files = attachment_info[category]
         count = len(files) if files else 0
         attachment_counts.append(count)
-        print(f"  {category}: {count}件")
+        logger.info(f"  {category}: {count}件")
 
     # 全カテゴリで添付ファイルが0件なら終了
     if all(count == 0 for count in attachment_counts):
-        print("\n  全カテゴリで添付ファイルが0件です。ダウンロード処理をスキップします。")
-        return 0
+        logger.info("  全カテゴリで添付ファイルが0件です。ダウンロード処理をスキップします。")
+        return WorkflowResult(
+            exit_code=0,
+            summary={"status": "no_files", "categories": dict(zip(categories, attachment_counts))}
+        )
 
     # 3. Edgeに接続
-    print("\n" + "=" * 80)
-    print("Edgeに接続中...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Edgeに接続中...")
+    logger.info("=" * 80)
 
     try:
         driver = NativeEdgeDriver(retries=2, start_if_not_found=False)
-        print("  接続完了")
+        logger.info("  接続完了")
     except Exception as exc:
-        print(f"  エラー: Edgeに接続できません: {exc}")
-        return 1
+        logger.error(f"  Edgeに接続できません: {exc}")
+        return WorkflowResult(
+            exit_code=1,
+            summary={"status": "connection_error", "error": str(exc)}
+        )
 
     # 4. 添付ファイルを最大2回ダウンロード
-    print("\n" + "=" * 80)
-    print("添付ファイルダウンロード中...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("添付ファイルダウンロード中...")
+    logger.info("=" * 80)
 
     download_results = []  # (成功/失敗, 添付ファイル数) のリスト
     max_attempts = len(attachment_counts)
 
     for attempt in range(max_attempts):
-        print(f"\n{'=' * 40}")
-        print(f"ダウンロード {attempt + 1}回目:")
-        print(f"カテゴリ: {categories[attempt]}")
-        print(f"添付ファイル数: {attachment_counts[attempt]}件")
-        print(f"{'=' * 40}")
+        logger.info("=" * 40)
+        logger.info(f"ダウンロード {attempt + 1}回目:")
+        logger.info(f"カテゴリ: {categories[attempt]}")
+        logger.info(f"添付ファイル数: {attachment_counts[attempt]}件")
+        logger.info("=" * 40)
 
         if download_attachments_once(driver, attachment_counts[attempt]):
             download_results.append((True, attachment_counts[attempt]))
-            print(f"  ダウンロード成功")
+            logger.info("  ダウンロード成功")
         else:
             download_results.append((False, attachment_counts[attempt]))
             # 添付ファイルが0件の場合は失敗扱いにしない
             if attachment_counts[attempt] > 0:
-                print(f"  ダウンロード失敗")
+                logger.warning("  ダウンロード失敗")
 
         # 最後の試行でなければ、切り替えボタンを探してクリック
         if attempt < max_attempts - 1:
-            print("\n  添付表示切り替えボタンを検索中...")
+            logger.debug("  添付表示切り替えボタンを検索中...")
             switch_button_idx = find_attachment_switch_button(driver)
 
             if switch_button_idx is not None:
-                print(f"  切り替えボタンをクリック (index={switch_button_idx})...")
+                logger.debug(f"  切り替えボタンをクリック (index={switch_button_idx})...")
                 driver.click_by_index(switch_button_idx)
                 time.sleep(1.5)  # 画面更新待ち
             else:
-                print("  切り替えボタンが見つかりません。")
+                logger.warning("  切り替えボタンが見つかりません。")
                 # 切り替えボタンがない場合は、残りの試行をスキップ
                 break
 
     # ダウンロード結果のサマリー
-    print(f"\n{'=' * 80}")
-    print("ダウンロード結果:")
-    print(f"{'=' * 80}")
+    logger.info("=" * 80)
+    logger.info("ダウンロード結果:")
+    logger.info("=" * 80)
 
     successful_downloads = 0
     zip_download_count = 0
+    category_results = {}
 
     for i, (success, count) in enumerate(download_results):
         if success and count > 0:
@@ -348,24 +378,35 @@ def main(save_output: bool = False, output_filename: str = "kesai_info.txt", out
             elif count == 1:
                 status += ", 単一ファイル"
             status += ")"
+            category_results[categories[i]] = {"success": True, "count": count}
         elif count == 0:
             status = "- スキップ (0件)"
+            category_results[categories[i]] = {"success": True, "count": 0, "skipped": True}
         else:
             status = "✗ 失敗"
+            category_results[categories[i]] = {"success": False, "count": count}
 
-        print(f"  {categories[i]}: {status}")
+        logger.info(f"  {categories[i]}: {status}")
 
     # 5. ダウンロードしたZIPファイルを展開
     downloads_dir = r"C:\Users\sa11882\Downloads"
     extract_downloaded_zips(downloads_dir, zip_download_count)
 
-    print("\n" + "=" * 80)
-    print("全処理完了")
-    print(f"  成功: {successful_downloads}件")
-    print(f"  ZIP展開: {zip_download_count}件")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("全処理完了")
+    logger.info(f"  成功: {successful_downloads}件")
+    logger.info(f"  ZIP展開: {zip_download_count}件")
+    logger.info("=" * 80)
 
-    return 0
+    return WorkflowResult(
+        exit_code=0,
+        summary={
+            "status": "completed",
+            "successful_downloads": successful_downloads,
+            "zip_extractions": zip_download_count,
+            "categories": category_results,
+        }
+    )
 
 
 def cli() -> int:
@@ -377,16 +418,36 @@ def cli() -> int:
         help="--save指定時に書き出すファイル名",
     )
     add_output_argument(parser)
+    add_logging_argument(parser)
     args = parser.parse_args()
 
-    exit_code = 0
+    # ログレベルを設定
+    log_level = getattr(logging, args.log_level)
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+    result = None
 
     def _task() -> None:
-        nonlocal exit_code
-        exit_code = main(args.save, args.output_file, args.output)
+        nonlocal result
+        result = main(args.save, args.output_file, stdout_target, stderr_target)
 
-    route_output(_task, args.output)
-    return exit_code
+    log = route_output(_task, stdout_target, stderr_target=stderr_target)
+
+    if result:
+        result.log = log
+        # サマリーを表示
+        print(f"\n--- Summary ---")
+        print(f"Exit Code: {result.exit_code}")
+        for key, value in result.summary.items():
+            print(f"{key}: {value}")
+        return result.exit_code
+
+    return 1
 
 
 if __name__ == "__main__":

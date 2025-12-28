@@ -3,13 +3,23 @@
 機能を細かく切り分け、コンダクター関数が全体を制御する設計
 """
 import argparse
+import logging
 import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from native_browser_control.core.driver import NativeEdgeDriver
-from native_browser_control.utils.output import add_output_argument, route_output
+from native_browser_control.utils.output import (
+    WorkflowResult,
+    add_logging_argument,
+    add_output_argument,
+    resolve_output_targets,
+    route_output,
+    setup_logger,
+)
+
+logger = setup_logger(__name__)
 
 
 # ================================================================================
@@ -18,14 +28,14 @@ from native_browser_control.utils.output import add_output_argument, route_outpu
 
 def print_section(title: str) -> None:
     """セクションヘッダーを表示"""
-    print("\n" + "=" * 80)
-    print(title)
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info(title)
+    logger.info("=" * 80)
 
 
 def print_step(step: str) -> None:
     """ステップ情報を表示"""
-    print(f"\n  {step}")
+    logger.debug(f"  {step}")
 
 
 # ================================================================================
@@ -53,13 +63,13 @@ def clear_download_folder(downloads_dir: str) -> bool:
         )
 
         if result.returncode == 0:
-            print("  [OK] ダウンロードフォルダを空にしました")
+            logger.info("  [OK] ダウンロードフォルダを空にしました")
             return True
         else:
-            print(f"  [ERROR] エラー: {result.stderr}")
+            logger.error(f"  [ERROR] エラー: {result.stderr}")
             return False
     except Exception as exc:
-        print(f"  [ERROR] 例外が発生: {exc}")
+        logger.error(f"  [ERROR] 例外が発生: {exc}")
         return False
 
 
@@ -78,10 +88,10 @@ def connect_to_browser() -> Optional[NativeEdgeDriver]:
 
     try:
         driver = NativeEdgeDriver(retries=2, start_if_not_found=False)
-        print("  [OK] 接続完了")
+        logger.info("  [OK] 接続完了")
         return driver
     except Exception as exc:
-        print(f"  [ERROR] 接続失敗: {exc}")
+        logger.error(f"  [ERROR] 接続失敗: {exc}")
         return None
 
 
@@ -138,11 +148,11 @@ def scan_current_attachment_info(driver: NativeEdgeDriver) -> int:
                     # 名前が取得できない場合はカウントに含める
                     file_count += 1
 
-        print(f"  [OK] 添付ファイル: {file_count}件（「文書」種類を除く）")
+        logger.info(f"  [OK] 添付ファイル: {file_count}件（「文書」種類を除く）")
         return file_count
 
     except Exception as exc:
-        print(f"  [ERROR] スキャン失敗: {exc}")
+        logger.error(f"  [ERROR] スキャン失敗: {exc}")
         return -1
 
 
@@ -551,7 +561,7 @@ def switch_attachment_view(driver: NativeEdgeDriver) -> bool:
 # コンダクター関数: 全体の流れを制御
 # ================================================================================
 
-def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> int:
+def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> WorkflowResult:
     """
     メインのコンダクター関数
     各ステップを順番に実行し、エラーハンドリングを行う
@@ -560,22 +570,22 @@ def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> int:
         downloads_dir: ダウンロードディレクトリパス
 
     Returns:
-        int: 終了コード（0=成功、1=失敗）
+        WorkflowResult: 実行結果
     """
-    print("=" * 80)
-    print("決裁ファイル一括ダウンロードスクリプト v2")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("決裁ファイル一括ダウンロードスクリプト v2")
+    logger.info("=" * 80)
 
     # ステップ1: ダウンロードフォルダをクリア
     if not clear_download_folder(downloads_dir):
-        print("\n[ERROR] ダウンロードフォルダのクリアに失敗しました")
-        return 1
+        logger.error("[ERROR] ダウンロードフォルダのクリアに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "clear_folder_failed"})
 
     # ステップ2: ブラウザに接続
     driver = connect_to_browser()
     if driver is None:
-        print("\n[ERROR] ブラウザへの接続に失敗しました")
-        return 1
+        logger.error("[ERROR] ブラウザへの接続に失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "connection_failed"})
 
     # ステップ2-1: ブラウザ接続直後のダイアログをチェック
     print_section("初期ダイアログをチェック")
@@ -584,48 +594,56 @@ def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> int:
     # ステップ3: 1回目 - 現在表示中の添付ファイル情報をスキャン
     file_count_1 = scan_current_attachment_info(driver)
     if file_count_1 < 0:
-        print("\n[ERROR] 添付ファイル情報のスキャンに失敗しました")
-        return 1
+        logger.error("[ERROR] 添付ファイル情報のスキャンに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "scan_failed"})
 
     # ステップ4: 1回目 - 添付ファイルをダウンロード
     if not download_attachments(driver, file_count_1):
-        print("\n[ERROR] 1回目のダウンロードに失敗しました")
-        return 1
+        logger.error("[ERROR] 1回目のダウンロードに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "download_1_failed", "file_count_1": file_count_1})
 
     # ステップ5: 1回目 - ZIPファイルを展開・削除
     if not extract_and_delete_zip(downloads_dir, file_count_1):
-        print("\n[ERROR] 1回目のZIP処理に失敗しました")
-        return 1
+        logger.error("[ERROR] 1回目のZIP処理に失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "extract_1_failed", "file_count_1": file_count_1})
 
     # ステップ6: 添付表示を切り替え
     if not switch_attachment_view(driver):
-        print("\n[ERROR] 添付表示の切り替えに失敗しました")
-        return 1
+        logger.error("[ERROR] 添付表示の切り替えに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "switch_failed", "file_count_1": file_count_1})
 
     # ステップ7: 2回目 - 切り替え後の添付ファイル情報をスキャン
     file_count_2 = scan_current_attachment_info(driver)
     if file_count_2 < 0:
-        print("\n[ERROR] 切り替え後の添付ファイル情報のスキャンに失敗しました")
-        return 1
+        logger.error("[ERROR] 切り替え後の添付ファイル情報のスキャンに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "scan_2_failed", "file_count_1": file_count_1})
 
     # ステップ8: 2回目 - 添付ファイルをダウンロード
     if not download_attachments(driver, file_count_2):
-        print("\n[ERROR] 2回目のダウンロードに失敗しました")
-        return 1
+        logger.error("[ERROR] 2回目のダウンロードに失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "download_2_failed", "file_count_1": file_count_1, "file_count_2": file_count_2})
 
     # ステップ9: 2回目 - ZIPファイルを展開・削除
     if not extract_and_delete_zip(downloads_dir, file_count_2):
-        print("\n[ERROR] 2回目のZIP処理に失敗しました")
-        return 1
+        logger.error("[ERROR] 2回目のZIP処理に失敗しました")
+        return WorkflowResult(exit_code=1, summary={"status": "extract_2_failed", "file_count_1": file_count_1, "file_count_2": file_count_2})
 
     # 完了サマリー
     print_section("処理完了")
-    print(f"  1回目: {file_count_1}件のファイルをダウンロード")
-    print(f"  2回目: {file_count_2}件のファイルをダウンロード")
-    print(f"  合計: {file_count_1 + file_count_2}件")
-    print("=" * 80)
+    logger.info(f"  1回目: {file_count_1}件のファイルをダウンロード")
+    logger.info(f"  2回目: {file_count_2}件のファイルをダウンロード")
+    logger.info(f"  合計: {file_count_1 + file_count_2}件")
+    logger.info("=" * 80)
 
-    return 0
+    return WorkflowResult(
+        exit_code=0,
+        summary={
+            "status": "completed",
+            "file_count_1": file_count_1,
+            "file_count_2": file_count_2,
+            "total_files": file_count_1 + file_count_2,
+        }
+    )
 
 
 # ================================================================================
@@ -636,16 +654,36 @@ def main_conductor(downloads_dir: str = r"C:\Users\sa11882\Downloads") -> int:
 def cli() -> int:
     parser = argparse.ArgumentParser(description="決裁ファイルを段階的にダウンロード (v2)")
     add_output_argument(parser)
+    add_logging_argument(parser)
     args = parser.parse_args()
 
-    exit_code = 0
+    # ログレベルを設定
+    log_level = getattr(logging, args.log_level)
+    logger.setLevel(log_level)
+    for handler in logger.handlers:
+        handler.setLevel(log_level)
+
+    stdout_target, stderr_target = resolve_output_targets(
+        args.output, stdout_target=args.stdout, stderr_target=args.stderr
+    )
+    result = None
 
     def _task() -> None:
-        nonlocal exit_code
-        exit_code = main_conductor()
+        nonlocal result
+        result = main_conductor()
 
-    route_output(_task, args.output)
-    return exit_code
+    log = route_output(_task, stdout_target, stderr_target=stderr_target)
+
+    if result:
+        result.log = log
+        # サマリーを表示
+        print(f"\n--- Summary ---")
+        print(f"Exit Code: {result.exit_code}")
+        for key, value in result.summary.items():
+            print(f"{key}: {value}")
+        return result.exit_code
+
+    return 1
 
 
 if __name__ == "__main__":
