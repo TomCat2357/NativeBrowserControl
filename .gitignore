@@ -1,0 +1,16 @@
+
+*.json
+CLAUDE.md
+*.log
+document_system_data/*
+document_system_result/*
+native_browser_control/workflows/*
+.*
+!.gitignore
+!.claude-plugin
+digest.txt
+tests/*
+*.pyc*
+*.ipynb
+*.bak
+native_browser_control.egg-info*

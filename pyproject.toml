@@ -1,0 +1,29 @@
+[project]
+name = "native-browser-control"
+version = "0.1.0"
+description = "Native Chrome/Edge automation without Selenium using pywinauto"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "mss>=10.1.0",
+    "pillow>=12.0.0",
+    "pywin32>=311",
+    "pywinauto>=0.6.9",
+    "mcp>=1.0.0",
+]
+
+[tool.uv]
+package = true
+
+
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+include = ["native_browser_control*"]
+
+[project.scripts]
+native-browser-control = "native_browser_control.core.server:main"
+
+[build-system]
+requires = ["setuptools==80.9.0", "wheel"]
+build-backend = "setuptools.build_meta"
