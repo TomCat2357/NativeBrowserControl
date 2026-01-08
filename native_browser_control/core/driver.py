@@ -1508,6 +1508,170 @@ class NativeBrowserDriver:
 
         return result
 
+    def get_index(
+        self,
+        *,
+        class_names: Optional[Union[str, Iterable[str]]] = None,
+        control_types: Optional[Union[str, Iterable[str]]] = None,
+        name_regex: Optional[str] = None,
+        value_regex: Optional[str] = None,
+        only_visible: bool = False,
+        require_enabled: bool = False,
+        min_width: Optional[int] = None,
+        min_height: Optional[int] = None,
+        only_focusable: bool = False,
+        automation_id_regex: Optional[str] = None,
+        omit_no_name: bool = False,
+        min_separator_count: int = 0,
+    ) -> list[int]:
+
+        control_types_list = None
+        if control_types:
+            control_types_list = [control_types] if isinstance(control_types, str) else list(control_types)
+
+        class_names_list = None
+        if class_names:
+            class_names_list = [class_names] if isinstance(class_names, str) else list(class_names)
+
+        compiled_regex = re.compile(name_regex) if name_regex else None
+        compiled_value_regex = re.compile(value_regex) if value_regex else None
+        compiled_automation_id_regex = (
+            re.compile(automation_id_regex) if automation_id_regex else None
+        )
+
+        separator_threshold = max(0, int(min_separator_count or 0))
+        separator_hits = 0
+
+        matched_indices: list[int] = []
+        for index in sorted(self.current_elements.keys()):
+            item = self.current_elements[index]
+            try:
+                name = item.window_text()
+            except Exception:
+                name = ""
+            name = name or ""
+
+            try:
+                f_class = item.friendly_class_name()
+            except Exception:
+                try:
+                    f_class = item.element_info.control_type
+                except Exception:
+                    f_class = "Unknown"
+
+            try:
+                element_control_type = item.element_info.control_type
+            except Exception:
+                element_control_type = None
+
+            value = ""
+            if compiled_value_regex:
+                try:
+                    value = item.get_value()
+                except Exception:
+                    value = ""
+                value = "" if value is None else str(value)
+                if not compiled_value_regex.search(value):
+                    continue
+
+            try:
+                is_separator = element_control_type == "Separator"
+                if is_separator:
+                    separator_hits += 1
+                    if separator_threshold and separator_hits <= separator_threshold:
+                        continue
+
+                if separator_threshold and separator_hits < separator_threshold:
+                    continue
+
+                if not name and omit_no_name:
+                    unnamed_allowed_types = [
+                        "CheckBox",
+                        "Button",
+                        "RadioButton",
+                        "ComboBox",
+                        "ListBox",
+                        "Edit",
+                        "Slider",
+                        "Spinner",
+                        "TabItem",
+                        "ToggleButton",
+                        "SplitButton",
+                        "MenuItem",
+                        "Link",
+                        "Hyperlink",
+                        "Separator",
+                    ]
+                    if element_control_type in unnamed_allowed_types:
+                        name = f"<{element_control_type}>"
+                    else:
+                        continue
+
+                if control_types_list:
+                    if element_control_type is None or element_control_type not in control_types_list:
+                        continue
+
+                if min_width is not None or min_height is not None:
+                    rect = item.rectangle()
+                    if (min_width is not None and rect.width() <= min_width) or (min_height is not None and rect.height() <= min_height):
+                        continue
+
+                if only_visible:
+                    try:
+                        if not item.is_visible():
+                            continue
+                    except Exception:
+                        continue
+
+                if require_enabled:
+                    try:
+                        if not item.is_enabled():
+                            continue
+                    except Exception:
+                        continue
+
+                if only_focusable:
+                    try:
+                        if not item.is_keyboard_focusable():
+                            continue
+                    except Exception:
+                        continue
+
+                if class_names_list:
+                    try:
+                        if f_class not in class_names_list:
+                            continue
+                    except Exception:
+                        continue
+
+                if compiled_regex and not compiled_regex.search(name):
+                    continue
+
+                try:
+                    auto_id = item.element_info.automation_id
+                except Exception:
+                    auto_id = ""
+                auto_id = "" if auto_id is None else str(auto_id)
+
+                if compiled_automation_id_regex:
+                    if not compiled_automation_id_regex.search(auto_id):
+                        continue
+
+                matched_indices.append(index)
+            except Exception as e:
+                logger.debug(
+                    f"get_index: Exception at index {index}: "
+                    f"{type(e).__name__}: {e}"
+                )
+                continue
+
+        logger.debug(
+            f"get_index: Processed {len(self.current_elements)} elements, "
+            f"matched {len(matched_indices)} indices"
+        )
+
+        return matched_indices
+
     def _ensure_current_elements_info(self) -> dict[int, dict[str, object]]:
         info = getattr(self, "current_elements_info", None)
         if isinstance(info, dict) and set(info.keys()) == set(self.current_elements.keys()):
