@@ -465,6 +465,32 @@ async def list_tools() -> list[Tool]:
             ),
         ),
 
+        # マウス操作
+        Tool(
+            name="move_mouse_to_element",
+            description="スキャンした要素の位置にマウスカーソルを移動します（先にscan_elementsを実行してください）",
+            inputSchema=build_schema(
+                properties={
+                    "index": {
+                        "type": "integer",
+                        "description": "マウスを移動する要素のインデックス",
+                    }
+                },
+                required=["index"],
+            ),
+        ),
+        Tool(
+            name="move_mouse_to_position",
+            description="指定したスクリーン絶対座標にマウスカーソルを移動します",
+            inputSchema=build_schema(
+                properties={
+                    "x": {"type": "integer", "description": "X座標（スクリーン座標）"},
+                    "y": {"type": "integer", "description": "Y座標（スクリーン座標）"},
+                },
+                required=["x", "y"],
+            ),
+        ),
+
         # 要素操作
 
         Tool(
@@ -608,6 +634,34 @@ async def list_tools() -> list[Tool]:
                 required=["index", "text"],
             ),
         ),
+        Tool(
+            name="get_index",
+            description="フィルタリング条件に合致する要素のインデックスリストを取得します（先にscan_elementsを実行してください）",
+            inputSchema=build_schema(
+                properties={
+                    "text": {
+                        "type": "string",
+                        "description": "テキストで要素をフィルタリング",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "タグで要素をフィルタリング",
+                    },
+                    "type_": {
+                        "type": "string",
+                        "description": "タイプで要素をフィルタリング",
+                    },
+                    "text_contains": {
+                        "type": "string",
+                        "description": "テキストに含まれる文字列で要素をフィルタリング",
+                    },
+                    "placeholder": {
+                        "type": "string",
+                        "description": "プレースホルダーで要素をフィルタリング",
+                    },
+                }
+            ),
+        ),
 
         # 待機
         Tool(
@@ -624,6 +678,11 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="copy_selected",
             description="選択中のテキストをコピーして取得します（Ctrl+C）",
+            inputSchema=build_schema(),
+        ),
+        Tool(
+            name="cut_text",
+            description="選択中のテキストをカットして取得します（Ctrl+X）",
             inputSchema=build_schema(),
         ),
         Tool(
@@ -837,6 +896,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
 
             return [TextContent(type="text", text=f"クリックしました: ({x}, {y}) - {click_type}")]
 
+        # マウス操作
+        elif name == "move_mouse_to_element":
+            index = arguments["index"]
+            driver.move_mouse_to_element(index)
+            return [TextContent(type="text", text=f"マウスを要素 [{index}] に移動しました")]
+
+        elif name == "move_mouse_to_position":
+            x = arguments["x"]
+            y = arguments["y"]
+            driver.move_mouse_to_position(x, y)
+            return [TextContent(type="text", text=f"マウスを位置 ({x}, {y}) に移動しました")]
+
         # 要素操作
 
         elif name == "scan_elements":
@@ -907,6 +978,22 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             result = driver.set_edit_text(index, text)
             return [TextContent(type="text", text=result)]
 
+        elif name == "get_index":
+            text = arguments.get("text")
+            tag = arguments.get("tag")
+            type_ = arguments.get("type_")
+            text_contains = arguments.get("text_contains")
+            placeholder = arguments.get("placeholder")
+
+            indices = driver.get_index(
+                text=text,
+                tag=tag,
+                type_=type_,
+                text_contains=text_contains,
+                placeholder=placeholder,
+            )
+            return [TextContent(type="text", text=f"マッチした要素のインデックス: {indices}")]
+
         # 待機
         elif name == "wait":
             seconds = arguments.get("seconds", 2)
@@ -916,6 +1003,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
         # クリップボード
         elif name == "copy_selected":
             text = driver.copy_selected_text()
+            return [TextContent(type="text", text=text)]
+
+        elif name == "cut_text":
+            text = driver.cut_selected_text()
             return [TextContent(type="text", text=text)]
 
         elif name == "paste":
