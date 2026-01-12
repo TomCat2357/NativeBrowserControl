@@ -81,30 +81,18 @@ python -m native_browser_control.server
 - タブ操作: `new_tab`, `close_tab`, `switch_tab`
 - ブラウザ操作: `back`, `forward`, `refresh`, `zoom`
 - 座標クリック: `click`
-- UI要素操作: `scan_elements`, `filter_elements`, `list_elements`, `elements_summary`, `click_element`, `set_element_text`
-- 待機・クリップボード: `wait`, `copy_selected`, `paste`
+- スキャンした要素の位置にマウスカーソルを移動します（先にscan_elementsを実行してください）: `move_mouse_to_element`
+- 指定したスクリーン絶対座標にマウスカーソルを移動します: `move_mouse_to_position`
+- UI要素操作: `scan_elements`, `filter_elements`, `list_elements`, `elements_summary`, `get_index`, `click_element`, `set_element_text`
+- 待機・クリップボード: `wait`, `copy_selected`, `cut_text`, `paste`
 
 ## UI要素スキャンの使い方
 - `scan_elements` で要素をスキャンし、`current_elements` を更新します（`control_type` / `title` / `max_elements` で簡易絞り込み）。
+- 要素更新モード: overwrite=上書き（デフォルト）, add=追加, preserve=変更なし
 - `filter_elements` で条件絞り込みできます（`control_types` / `class_names` / `name_regex` / `value_regex` / `automation_id` / `automation_id_regex` / `only_visible` / `require_enabled` / `only_focusable` / `min_width` / `min_height` / `omit_no_name` / `min_separator_count` など）。
-- `output` は `simple` / `summary` / `full` を指定可能。`overwrite=false` で `current_elements` を保持できます。
+- `output` は `simple` / `summary` / `full` を指定可能。
 - `list_elements` / `elements_summary` で一覧・集計表示、`click_element` / `set_element_text` で操作します。
-- `index_ranges` は `"1:4,10:-1"` のような Python スライス形式です。
-
-## ワークフロー/ユーティリティ
-調査・抽出・ダウンロード向けのスクリプトが `native_browser_control/workflows/` にあります。
-例:
-- `analysis/parse_log.py`: チャットログの抽出表示
-- `extraction/kesai_page.py`: 決裁ページ情報の抽出
-- `downloads/attachments_basic.py`, `downloads/attachments_conductor.py`: 添付ファイルのダウンロード補助
-- `investigations/*`: チェックボックスやテーブル構造の調査系スクリプト
-
-基本的に `python -m native_browser_control.workflows.<path> --help` で利用方法を確認できます。
-
-## ドキュメント
-- `docs/DOCUMENTATION.md`: 詳細ドキュメント
-- `browser_table_extraction.md`: ブラウザテーブル抽出の手順メモ
-- `approval_system_file_download_procedure.md`: 承認システムのファイルDL手順
+- フィルタリング条件に合致する要素のインデックスリストを取得します（先にscan_elementsを実行してください）: `get_index`
 
 ## 主要ファイル
 - `native_browser_control/server.py`: MCP サーバー本体。ツール定義とハンドラーを提供。
