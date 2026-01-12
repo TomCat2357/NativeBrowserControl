@@ -75,6 +75,12 @@ Write-Host "[6/6] Running ensurepip in virtual environment..."
 python -m ensurepip --upgrade
 
 # ----------------
+# Install NativeBrowserControl (from GitHub)
+# ----------------
+Write-Host "[EXTRA] Installing NativeBrowserControl from GitHub..."
+python -m pip install git+https://github.com/TomCat2357/NativeBrowserControl.git
+
+# ----------------
 # Verification (SAFE)
 # ----------------
 Write-Host ""
