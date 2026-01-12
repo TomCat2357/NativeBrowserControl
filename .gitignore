@@ -1,0 +1,11 @@
+
+CLAUDE.md
+*.log
+!.gitignore
+!.claude-plugin
+digest.txt
+tests/*
+*.pyc*
+*.ipynb
+*.bak
+native_browser_control.egg-info*
