@@ -496,8 +496,8 @@ def connect_browser_by_index(
     driver = object.__new__(NativeBrowserDriver)
     driver.browser = browser
     driver._config = BROWSER_CONFIG[browser]
-    driver.current_elements = {}
-    driver.current_elements_info = {}
+    driver.current_elements = []
+    driver.current_elements_info = []
     driver.current_elements_truncated = False
     driver.app = None
     driver.window = None
@@ -852,8 +852,8 @@ class NativeBrowserDriver:
         self._config = BROWSER_CONFIG[browser]
         _enable_dpi_awareness()
 
-        self.current_elements = {}
-        self.current_elements_info = {}
+        self.current_elements = []
+        self.current_elements_info = []
         self.current_elements_truncated = False
         self.app = None
         self.window = None
@@ -1045,7 +1045,7 @@ class NativeBrowserDriver:
 
     def set_edit_text_result(self, index: int, text: str) -> ActionResult:
         """スキャンした要素のテキストを設定する（ActionResult版）"""
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             return ActionResult.failure(
                 "element_not_found",
                 f"set_edit_text: element not found (index={index})",
@@ -1239,8 +1239,8 @@ class NativeBrowserDriver:
     ):
         self._prepare_for_read(foreground=foreground, maximize=maximize, settle_ms=settle_ms)
 
-        elements_map: dict[int, Any] = {}
-        elements_info: dict[int, dict[str, object]] = {}
+        elements_list: list[Any] = []
+        elements_info_list: list[dict[str, object]] = []
 
         descendants_kwargs: dict[str, Any] = {}
         if control_type is not None:
@@ -1252,7 +1252,7 @@ class NativeBrowserDriver:
         truncated = False
         max_elements = int(max_elements) if max_elements is not None else 0
         for item in all_items:
-            if len(elements_map) >= max_elements:
+            if len(elements_list) >= max_elements:
                 truncated = True
                 break
 
@@ -1275,31 +1275,28 @@ class NativeBrowserDriver:
                 aid = ""
             aid = "" if aid is None else str(aid)
 
-            index = len(elements_map)
-            elements_map[index] = item
-            elements_info[index] = {
+            elements_list.append(item)
+            elements_info_list.append({
                 "control_type": str(f_class) if f_class is not None else "Unknown",
                 "name": name or "",
                 "automation_id": aid,
-            }
+            })
 
         if update_mode == "overwrite":
             # 現在の要素を完全に置き換え
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
             self.current_elements_truncated = truncated
         elif update_mode == "add":
-            # 既存インデックスを保持して新しいインデックスで追加
-            max_index = max(self.current_elements.keys()) if self.current_elements else -1
-            for idx, (elem, info) in enumerate(zip(elements_map.values(), elements_info.values())):
-                new_idx = max_index + idx + 1
-                self.current_elements[new_idx] = elem
-                self.current_elements_info[new_idx] = info
+            # 既存リストに追加
+            for elem, info in zip(elements_list, elements_info_list):
+                self.current_elements.append(elem)
+                self.current_elements_info.append(info)
         elif update_mode == "preserve":
             # スキャン結果は返すが、current_elementsは変更しない
             pass
 
-        return f"Found {len(elements_map)} elements."
+        return f"Found {len(elements_list)} elements."
 
     def filter_current_elements(
         self,
@@ -1338,7 +1335,7 @@ class NativeBrowserDriver:
         separator_hits = 0
 
         matched_items: list[tuple[Any, str, str, str]] = []
-        for index in sorted(self.current_elements.keys()):
+        for index in range(len(self.current_elements)):
             item = self.current_elements[index]
             try:
                 name = item.window_text()
@@ -1467,25 +1464,23 @@ class NativeBrowserDriver:
             f"matched {len(matched_items)} items"
         )
 
-        selected_indices = list(range(len(matched_items)))
-        elements_map: dict[int, Any] = {}
-        elements_info: dict[int, dict[str, object]] = {}
-        for current_index in selected_indices:
-            item, f_class, name, aid = matched_items[current_index]
-            elements_map[current_index] = item
-            elements_info[current_index] = {
+        elements_list: list[Any] = []
+        elements_info_list: list[dict[str, object]] = []
+        for item, f_class, name, aid in matched_items:
+            elements_list.append(item)
+            elements_info_list.append({
                 "control_type": str(f_class) if f_class is not None else "Unknown",
                 "name": name or "",
                 "automation_id": aid,
-            }
+            })
 
         output_mode = str(output or "simple").lower()
         if output_mode == "simple":
-            result = f"Filtered {len(elements_map)} elements."
+            result = f"Filtered {len(elements_list)} elements."
         elif output_mode == "summary":
-            result = self._format_elements_summary(elements_map, elements_info, truncated=False)
+            result = self._format_elements_summary(elements_list, elements_info_list, truncated=False)
         elif output_mode == "full":
-            result = self._format_elements_list(elements_map, elements_info, truncated=False)
+            result = self._format_elements_list(elements_list, elements_info_list, truncated=False)
         else:
             raise InvalidInputError(
                 f"filter_current_elements: unknown output mode: {output!r}",
@@ -1494,15 +1489,15 @@ class NativeBrowserDriver:
 
         if update_mode == "overwrite":
             # 現在の要素を完全に置き換え
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
             self.current_elements_truncated = False
         elif update_mode == "preserve":
             # フィルタ結果は返すが、current_elementsは変更しない
             pass
 
         logger.debug(
-            f"filter_current_elements: Final result = {len(elements_map)} elements, "
+            f"filter_current_elements: Final result = {len(elements_list)} elements, "
             f"update_mode={update_mode}"
         )
 
@@ -1543,7 +1538,7 @@ class NativeBrowserDriver:
         separator_hits = 0
 
         matched_indices: list[int] = []
-        for index in sorted(self.current_elements.keys()):
+        for index in range(len(self.current_elements)):
             item = self.current_elements[index]
             try:
                 name = item.window_text()
@@ -1672,13 +1667,13 @@ class NativeBrowserDriver:
 
         return matched_indices
 
-    def _ensure_current_elements_info(self) -> dict[int, dict[str, object]]:
+    def _ensure_current_elements_info(self) -> list[dict[str, object]]:
         info = getattr(self, "current_elements_info", None)
-        if isinstance(info, dict) and set(info.keys()) == set(self.current_elements.keys()):
+        if isinstance(info, list) and len(info) == len(self.current_elements):
             return info
 
-        info = {}
-        for index, item in self.current_elements.items():
+        info = []
+        for index, item in enumerate(self.current_elements):
             try:
                 control_type = item.friendly_class_name()
             except Exception:
@@ -1698,25 +1693,25 @@ class NativeBrowserDriver:
                 aid = ""
             aid = "" if aid is None else str(aid)
 
-            info[index] = {
+            info.append({
                 "control_type": str(control_type) if control_type is not None else "Unknown",
                 "name": name,
                 "automation_id": aid,
-            }
+            })
 
         self.current_elements_info = info
         return info
 
     def _format_elements_list(
         self,
-        elements_map: dict[int, Any],
-        elements_info: dict[int, dict[str, object]],
+        elements_list: list[Any],
+        elements_info_list: list[dict[str, object]],
         *,
         truncated: bool,
     ) -> str:
         lines: list[str] = []
-        for index in sorted(elements_map.keys()):
-            info = elements_info.get(index, {})
+        for index in range(len(elements_list)):
+            info = elements_info_list[index] if index < len(elements_info_list) else {}
             control_type = info.get("control_type") or "Unknown"
             name = info.get("name") or ""
             aid = info.get("automation_id")
@@ -1731,18 +1726,18 @@ class NativeBrowserDriver:
 
     def _format_elements_summary(
         self,
-        elements_map: dict[int, Any],
-        elements_info: dict[int, dict[str, object]],
+        elements_list: list[Any],
+        elements_info_list: list[dict[str, object]],
         *,
         truncated: bool,
     ) -> str:
         type_counts: dict[str, int] = {}
-        for index in elements_map.keys():
-            info = elements_info.get(index, {})
+        for index in range(len(elements_list)):
+            info = elements_info_list[index] if index < len(elements_info_list) else {}
             control_type = info.get("control_type") or "Unknown"
             type_counts[control_type] = type_counts.get(control_type, 0) + 1
 
-        summary_lines = [f"Total elements: {len(elements_map)}"]
+        summary_lines = [f"Total elements: {len(elements_list)}"]
         if type_counts:
             summary_lines.append("Elements by type:")
             for control_type_name, count in sorted(type_counts.items()):
@@ -1773,7 +1768,7 @@ class NativeBrowserDriver:
         return result.message
 
     def click_by_index_result(self, index: int) -> ActionResult:
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             return ActionResult.failure(
                 "element_not_found",
                 f"click_by_index: element not found (index={index})",
@@ -2025,8 +2020,8 @@ class NativeBrowserDriver:
             "visible_by_control_type": {},
             "invisible_by_control_type": {},
         }
-        self.current_elements = {}
-        self.current_elements_info = {}
+        self.current_elements = []
+        self.current_elements_info = []
         self.current_elements_truncated = False
         try:
             items = self.window.descendants()
@@ -2035,10 +2030,10 @@ class NativeBrowserDriver:
             visible_map = descendants_payload["visible_by_control_type"]
             invisible_map = descendants_payload["invisible_by_control_type"]
 
-            elements_map: dict[int, Any] = {}
-            elements_info: dict[int, dict[str, object]] = {}
-            for index, item in enumerate(items):
-                elements_map[index] = item
+            elements_list: list[Any] = []
+            elements_info_list: list[dict[str, object]] = []
+            for item in items:
+                elements_list.append(item)
                 try:
                     control_type = getattr(getattr(item, "element_info", None), "control_type", None)
                 except Exception:
@@ -2063,11 +2058,11 @@ class NativeBrowserDriver:
                     aid = ""
                 aid = "" if aid is None else str(aid)
 
-                elements_info[index] = {
+                elements_info_list.append({
                     "control_type": control_type,
                     "name": name,
                     "automation_id": aid,
-                }
+                })
 
                 try:
                     is_visible = bool(item.is_visible())
@@ -2081,8 +2076,8 @@ class NativeBrowserDriver:
                     descendants_payload["invisible_total"] = int(descendants_payload["invisible_total"]) + 1
                     invisible_map[control_type] = int(invisible_map.get(control_type, 0)) + 1
 
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
         except Exception as e:
             descendants_payload["error"] = _norm_trunc(e)
 
@@ -2195,7 +2190,7 @@ class NativeBrowserDriver:
 
     def move_mouse_to_element(self, index: int) -> None:
         """スキャンした要素の位置にマウスを移動"""
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             raise ElementNotFoundError(
                 f"move_mouse_to_element: element not found (index={index})",
                 code="element_not_found",
