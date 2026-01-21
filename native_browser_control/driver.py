@@ -307,12 +307,10 @@ def get_browser_window(
     window_predicate=None,
     exe_name: Optional[str] = None,
     retries: int = 3,
-    start_if_not_found: bool = False,
 ):
     """
     指定ブラウザのウィンドウを取得（既存ウィンドウのみ）。
 
-    起動されていない場合は例外を投げる。start_if_not_found=True の場合のみ起動を試みる。
     """
     config = BROWSER_CONFIG.get(browser)
     if not config:
@@ -337,25 +335,6 @@ def get_browser_window(
 
     if matches:
         return matches[0]
-
-    if start_if_not_found:
-        _launch_browser_process(config)
-        time.sleep(1)
-        matches = find_browser_windows(
-            browser,
-            extra_title_keywords=extra_title_keywords,
-            title_regex=title_regex,
-            require_visible=require_visible,
-            require_enabled=require_enabled,
-            exclude_minimized=exclude_minimized,
-            class_name=class_name,
-            control_type=control_type,
-            window_predicate=window_predicate,
-            exe_name=exe_name,
-            retries=retries,
-        )
-        if matches:
-            return matches[0]
 
     raise WindowNotFoundError(f"get_browser_window: {browser} window not found")
 
@@ -446,7 +425,7 @@ def launch_browser_driver(
 
     _launch_browser_process(config)
     time.sleep(start_delay)
-    return NativeBrowserDriver(browser=browser, retries=retries, start_if_not_found=False)
+    return NativeBrowserDriver(browser=browser, retries=retries)
 
 
 def connect_browser_by_index(
@@ -840,7 +819,7 @@ class NativeBrowserDriver:
         window_predicate=None,
         exe_name: Optional[str] = None,
         retries: int = 3,
-        start_if_not_found: bool = False,
+        launch: bool = False,
     ):
         if browser not in BROWSER_CONFIG:
             raise UnsupportedBrowserError(
@@ -859,19 +838,67 @@ class NativeBrowserDriver:
         self.window = None
 
         # 1. まずウィンドウを確実に取得する（なければ起動も含めて get_browser_window が担当）
-        found_window = get_browser_window(
-            browser,
-            extra_title_keywords=extra_title_keywords,
-            title_regex=title_regex,
-            require_visible=require_visible,
-            require_enabled=require_enabled,
-            exclude_minimized=exclude_minimized,
-            class_name=class_name,
-            control_type=control_type,
+        if launch:
+            existing_handles = {
+                int(w.handle)
+                for w in find_browser_windows(
+                    browser,
+                    extra_title_keywords=extra_title_keywords,
+                    title_regex=title_regex,
+                    require_visible=require_visible,
+                    require_enabled=require_enabled,
+                    exclude_minimized=exclude_minimized,
+                    class_name=class_name,
+                    control_type=control_type,
+                    window_predicate=window_predicate,
+                    exe_name=exe_name,
+                    retries=1,
+                )
+            }
+            _launch_browser_process(self._config)
+
+            found_window = None
+            max_attempts = max(1, int(retries))
+            for attempt in range(max_attempts):
+                matches = find_browser_windows(
+                    browser,
+                    extra_title_keywords=extra_title_keywords,
+                    title_regex=title_regex,
+                    require_visible=require_visible,
+                    require_enabled=require_enabled,
+                    exclude_minimized=exclude_minimized,
+                    class_name=class_name,
+                    control_type=control_type,
+                    window_predicate=window_predicate,
+                    exe_name=exe_name,
+                    retries=1,
+                )
+                for w in matches:
+                    if int(w.handle) not in existing_handles:
+                        found_window = w
+                        break
+                if found_window:
+                    break
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+
+            if not found_window:
+                raise WindowNotFoundError(
+                    f"NativeBrowserDriver: launched {browser} but new window not found"
+                )
+        else:
+            found_window = get_browser_window(
+                browser,
+                extra_title_keywords=extra_title_keywords,
+                title_regex=title_regex,
+                require_visible=require_visible,
+                require_enabled=require_enabled,
+                exclude_minimized=exclude_minimized,
+                class_name=class_name,
+                control_type=control_type,
             window_predicate=window_predicate,
             exe_name=exe_name,
             retries=retries,
-            start_if_not_found=start_if_not_found,
         )
 
         # 2. 取得したウィンドウ情報を元に接続する
@@ -2286,20 +2313,20 @@ class NativeBrowserDriver:
 class NativeChromeDriver(NativeBrowserDriver):
     """Chrome専用ドライバー（後方互換性のため）"""
 
-    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(browser="chrome", retries=retries, start_if_not_found=start_if_not_found)
+    def __init__(self, *, retries: int = 3, launch: bool = False):
+        super().__init__(browser="chrome", retries=retries, launch=launch)
 
 
 class NativeEdgeDriver(NativeBrowserDriver):
     """Microsoft Edge専用ドライバー"""
 
-    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(browser="edge", retries=retries, start_if_not_found=start_if_not_found)
+    def __init__(self, *, retries: int = 3, launch: bool = False):
+        super().__init__(browser="edge", retries=retries, launch=launch)
 
 
 if __name__ == "__main__":
     # Chrome の例
-    driver = NativeChromeDriver(start_if_not_found=True)
+    driver = NativeChromeDriver(launch=True)
     driver.navigate("https://www.google.com")
     driver.screenshot(file_path="chrome.png", prefer="printwindow", allow_fallback=True)
 
