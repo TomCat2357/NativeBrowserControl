@@ -852,10 +852,11 @@ class NativeBrowserDriver:
                     control_type=control_type,
                     window_predicate=window_predicate,
                     exe_name=exe_name,
-                    retries=1,
+                    retries=retries,
                 )
             }
             _launch_browser_process(self._config)
+            time.sleep(1)
 
             found_window = None
             max_attempts = max(1, int(retries))

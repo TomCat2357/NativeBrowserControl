@@ -9,3 +9,4 @@ tests/*
 *.ipynb
 *.bak
 native_browser_control.egg-info*
+*test*
