@@ -46,15 +46,6 @@ DRIVER_FACTORIES: dict[str, type[NativeBrowserDriver]] = {
 }
 _drivers: dict[str, NativeBrowserDriver] = {}
 
-BROWSER_PROPERTY = {
-    "browser": {
-        "type": "string",
-        "enum": ["chrome", "edge"],
-        "description": "対象ブラウザ（省略時: chrome）",
-    }
-}
-
-
 def build_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
     """??????????????????"""
     schema: dict[str, Any] = {"type": "object", "properties": properties or {}}
@@ -376,15 +367,27 @@ def _result_to_contents(name: str, result: Any, arguments: dict[str, Any]) -> li
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     """??????????????"""
-    arguments = arguments or {}
-    browser = arguments.pop("browser", "chrome")
     try:
-        driver = get_driver(browser)
+        arguments = arguments or {}
+        driver = get_driver()
         if not hasattr(driver, name):
             return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")
 
         member = getattr(driver, name)
         if callable(member):
+            sig = inspect.signature(member)
+            allowed_params = {
+                param.name
+                for param in sig.parameters.values()
+                if param.name != "self"
+                and param.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+            }
+            unknown_params = sorted(set(arguments) - allowed_params)
+            if unknown_params:
+                return _error_text(
+                    "invalid_input",
+                    f"call_tool: unexpected arguments for '{name}': {unknown_params}",
+                )
             result = member(**arguments)
         else:
             result = member
