@@ -199,13 +199,13 @@ Windowsの「開く」ダイアログ（ファイル選択画面）でファイ�
 
 ## 手順
 
-1. **要素スキャン**: `scan_elements` を実行して件数を確認
-2. **一覧取得**: `list_elements` でダイアログ内の要素一覧を取得
+1. **要素スキャン**: `scan_page_elements` を実行して件数を確認
+2. **一覧取得**: `get_current_elements_list` でダイアログ内の要素一覧を取得
 3. **Edit要素を特定**: 一覧から「ファイル名(N):」に対応する `<Edit>` 要素のインデックスを確認
    - 通常は `[56] <Edit> ファイル名(N):` のような形式で表示される
-4. **テキスト設定**: `set_element_text` でインデックスとファイルパスを指定
-   - 例: `set_element_text(index=56, text="C:\\Users\\username\\Downloads\\file.txt")`
-5. **開くボタンクリック**: `click_element` で「開く(O)」ボタンをクリック
+4. **テキスト設定**: `set_edit_text` でインデックスとファイルパスを指定
+   - 例: `set_edit_text(index=56, text="C:\\Users\\username\\Downloads\\file.txt")`
+5. **開くボタンクリック**: `click_by_index` で「開く(O)」ボタンをクリック
    - 通常は `[61] <Button> 開く(O)` のようなインデックス
 
 ## 注意点
@@ -230,27 +230,27 @@ Google Geminiのチャット画面でローカルファイルをアップロー�
 
 ### Step 1: ファイルアップロードメニューを開く
 
-1. `scan_elements` で要素をスキャン
-2. `list_elements` で要素一覧を取得
+1. `scan_page_elements` で要素をスキャン
+2. `get_current_elements_list` で要素一覧を取得
 3. 「ファイルをアップロード」ボタンを探す
    - 例: `[168] <Button> ファイルをアップロード. ドキュメント、データ、コードファイル`
-4. `click_element` でそのボタンをクリック
+4. `click_by_index` でそのボタンをクリック
 5. `wait` で2秒程度待機（ダイアログが開くまで）
 
 ### Step 2: ファイル選択ダイアログでファイルを指定
 
-1. `scan_elements` で「開く」ダイアログの要素をスキャン
-2. `list_elements` で要素一覧を取得
+1. `scan_page_elements` で「開く」ダイアログの要素をスキャン
+2. `get_current_elements_list` で要素一覧を取得
 3. 「ファイル名(N):」の `<Edit>` 要素のインデックスを確認
    - 例: `[56] <Edit> ファイル名(N):`
-4. `set_element_text` でファイルパスを入力
-   - 例: `set_element_text(index=56, text="C:\\Users\\username\\Downloads\\a.txt")`
+4. `set_edit_text` でファイルパスを入力
+   - 例: `set_edit_text(index=56, text="C:\\Users\\username\\Downloads\\a.txt")`
 
 ### Step 3: 開くボタンをクリック
 
 1. 「開く(O)」ボタンのインデックスを確認
    - 例: `[61] <Button> 開く(O)`
-2. `click_element` でクリック
+2. `click_by_index` でクリック
 3. `wait` で2秒程度待機
 
 ### Step 4: 確認
@@ -261,14 +261,14 @@ Google Geminiのチャット画面でローカルファイルをアップロー�
 ## サンプルコード（MCP呼び出し順序）
 
 ```
-1. scan_elements()
-2. list_elements()
-3. click_element(index=168)  # ファイルをアップロードボタン
+1. scan_page_elements()
+2. get_current_elements_list()
+3. click_by_index(index=168)  # ファイルをアップロードボタン
 4. wait(seconds=2)
-5. scan_elements()
-6. list_elements()
-7. set_element_text(index=56, text="C:\\Users\\gk3t-\\Downloads\\a.txt")
-8. click_element(index=61)  # 開く(O)ボタン
+5. scan_page_elements()
+6. get_current_elements_list()
+7. set_edit_text(index=56, text="C:\\Users\\gk3t-\\Downloads\\a.txt")
+8. click_by_index(index=61)  # 開く(O)ボタン
 9. wait(seconds=2)
 10. screenshot()  # 確認
 ```
