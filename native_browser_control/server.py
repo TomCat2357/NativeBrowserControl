@@ -13,7 +13,7 @@ import io
 import json
 import inspect
 from dataclasses import asdict
-from typing import Any, Literal, get_args, get_origin
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -101,79 +101,186 @@ def get_driver(browser: str = "chrome", *, start_if_not_found: bool = False) -> 
     return driver
 
 
-def _schema_type_from_annotation(annotation: Any, default: Any) -> tuple[str, list[Any] | None]:
+def _annotation_to_str(annotation: Any) -> str:
+    """型注釈を人間向けの短い文字列にする（JSON Schemaではなく表示用）。"""
     if annotation is inspect._empty:
-        if isinstance(default, bool):
-            return "boolean", None
-        if isinstance(default, int) and not isinstance(default, bool):
-            return "integer", None
-        if isinstance(default, float):
-            return "number", None
-        if isinstance(default, list):
-            return "array", None
-        if isinstance(default, dict):
-            return "object", None
-        return "string", None
-
-    origin = get_origin(annotation)
-    if origin is not None:
-        if origin is list:
-            return "array", None
-        if origin is dict:
-            return "object", None
-        if origin is tuple:
-            return "array", None
-        if origin is set:
-            return "array", None
-        if origin is Literal:
-            values = list(get_args(annotation))
-            enum_type = "string"
-            if values and isinstance(values[0], bool):
-                enum_type = "boolean"
-            elif values and isinstance(values[0], int):
-                enum_type = "integer"
-            return enum_type, values
-
-    if annotation is bool:
-        return "boolean", None
-    if annotation is int:
-        return "integer", None
-    if annotation is float:
-        return "number", None
-    if annotation is str:
-        return "string", None
-
-    return "object", None
+        return ""
+    try:
+        # typing objects
+        return str(annotation).replace("typing.", "")
+    except Exception:
+        return repr(annotation)
 
 
-def _build_schema_from_signature(sig: inspect.Signature) -> dict[str, Any]:
-    properties: dict[str, Any] = {}
-    required: list[str] = []
+def _is_public_driver_member(name: str) -> bool:
+    if name.startswith("_"):
+        return False
+    if name.startswith("__") and name.endswith("__"):
+        return False
+    return True
 
-    for param in sig.parameters.values():
-        if param.name == "self":
+
+def _iter_driver_members(
+    driver: NativeBrowserDriver,
+    *,
+    include_private: bool = False,
+    include_properties: bool = True,
+    include_inherited: bool = True,
+) -> list[tuple[str, Any]]:
+    """現在のdriverインスタンスからメソッド/プロパティ候補を列挙する。"""
+    members: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+
+    # inspect.getmembers は inherited も拾う。不要なら type(driver).__dict__ だけ見る。
+    if include_inherited:
+        items = inspect.getmembers(type(driver))
+    else:
+        items = list(type(driver).__dict__.items())
+
+    for name, member in items:
+        if name in seen:
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        seen.add(name)
+
+        if not include_private and not _is_public_driver_member(name):
             continue
-        default = param.default
-        param_type, enum_values = _schema_type_from_annotation(param.annotation, default)
-        prop: dict[str, Any] = {"type": param_type}
-        if enum_values:
-            prop["enum"] = enum_values
-        properties[param.name] = prop
-        if default is inspect._empty:
-            required.append(param.name)
 
-    return build_schema(properties=properties, required=required or None)
-
-
-def _iter_driver_tools() -> list[tuple[str, Any]]:
-    tools: list[tuple[str, Any]] = []
-    for name, member in NativeBrowserDriver.__dict__.items():
-        if name.startswith("_") or (name.startswith("__") and name.endswith("__")):
+        # property
+        if isinstance(member, property):
+            if include_properties:
+                members.append((name, member))
             continue
-        tools.append((name, member))
-    return tools
+
+        # method/function
+        if callable(member):
+            members.append((name, member))
+            continue
+
+    members.sort(key=lambda x: x[0])
+    return members
+
+
+def _signature_to_json(sig: inspect.Signature) -> dict[str, Any]:
+    params: list[dict[str, Any]] = []
+    for p in sig.parameters.values():
+        if p.name == "self":
+            continue
+        if p.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            # 可変長は情報として載せるが、UI入力はargs/kwargsで受けるので必須ではない
+            params.append(
+                {
+                    "name": p.name,
+                    "kind": str(p.kind),
+                    "required": False,
+                    "default": None,
+                    "annotation": _annotation_to_str(p.annotation),
+                    "variadic": True,
+                }
+            )
+            continue
+
+        required = p.default is inspect._empty
+        default = None if required else p.default
+        params.append(
+            {
+                "name": p.name,
+                "kind": str(p.kind),
+                "required": required,
+                "default": default,
+                "annotation": _annotation_to_str(p.annotation),
+            }
+        )
+
+    return {
+        "signature": str(sig),
+        "params": params,
+        "return_annotation": _annotation_to_str(sig.return_annotation),
+    }
+
+
+def _get_capabilities_payload(
+    driver: NativeBrowserDriver,
+    *,
+    include_private: bool = False,
+    include_properties: bool = True,
+    include_inherited: bool = True,
+) -> dict[str, Any]:
+    methods: list[dict[str, Any]] = []
+    for name, member in _iter_driver_members(
+        driver,
+        include_private=include_private,
+        include_properties=include_properties,
+        include_inherited=include_inherited,
+    ):
+        if isinstance(member, property):
+            doc = (member.fget.__doc__ or "") if getattr(member, "fget", None) else ""
+            methods.append(
+                {
+                    "name": name,
+                    "kind": "property",
+                    "doc": doc.strip(),
+                }
+            )
+            continue
+
+        if callable(member):
+            try:
+                sig = inspect.signature(member)
+                sig_json = _signature_to_json(sig)
+            except Exception:
+                sig_json = {"signature": "", "params": [], "return_annotation": ""}
+
+            doc = (getattr(member, "__doc__", None) or "").strip()
+            methods.append(
+                {
+                    "name": name,
+                    "kind": "method",
+                    **sig_json,
+                    "doc": doc,
+                }
+            )
+
+    return {
+        "ok": True,
+        "driver_class": type(driver).__name__,
+        "methods": methods,
+    }
+
+
+def _invoke_driver_method(
+    driver: NativeBrowserDriver,
+    *,
+    method: str,
+    args: list[Any] | None,
+    kwargs: dict[str, Any] | None,
+) -> Any:
+    """NativeBrowserDriverの任意メソッドを（可能な範囲で検証して）実行する。"""
+    if not method:
+        raise ValueError("method is required")
+    if not _is_public_driver_member(method):
+        raise ValueError(f"method not allowed: {method}")
+
+    if not hasattr(driver, method):
+        raise AttributeError(f"unknown method: {method}")
+
+    target = getattr(driver, method)
+
+    # property read
+    if isinstance(getattr(type(driver), method, None), property):
+        if args or kwargs:
+            raise TypeError(f"{method} is a property; args/kwargs are not allowed")
+        return target
+
+    if not callable(target):
+        return target
+
+    a = args or []
+    k = kwargs or {}
+
+    # Signature validation (keeps server robust against driver spec changes)
+    sig = inspect.signature(target)
+    sig.bind_partial(*a, **k)  # raises TypeError on mismatch
+    return target(*a, **k)
 
 
 # MCPサーバーの作成
@@ -299,25 +406,56 @@ async def read_resource(uri: str) -> str:
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
-    """???????????????????????????"""
-    tools: list[Tool] = []
-    for name, member in _iter_driver_tools():
-        if isinstance(member, property):
-            schema = build_schema()
-            description = member.__doc__ or f"NativeBrowserDriver.{name}"
-        elif callable(member):
-            schema = _build_schema_from_signature(inspect.signature(member))
-            description = member.__doc__ or f"NativeBrowserDriver.{name}"
-        else:
-            continue
-        tools.append(
-            Tool(
-                name=name,
-                description=description.strip() if description else f"NativeBrowserDriver.{name}",
-                inputSchema=schema,
-            )
-        )
-    return tools
+    """固定ツールのみ公開（driverの変更に追従しやすいReflect+Invoke設計）。"""
+    common_props = {
+        "browser": {"type": "string", "enum": ["chrome", "edge"], "default": "chrome"},
+        "start_if_not_found": {"type": "boolean", "default": False},
+    }
+
+    return [
+        Tool(
+            name="driver_get_capabilities",
+            description=(
+                "NativeBrowserDriverのメソッド/引数/Docstring等の仕様を取得します。"
+                " driver側の変更にMCPサーバーを追従させないための反射ツールです。"
+            ),
+            inputSchema=build_schema(
+                properties={
+                    **common_props,
+                    "include_private": {"type": "boolean", "default": False},
+                    "include_properties": {"type": "boolean", "default": True},
+                    "include_inherited": {"type": "boolean", "default": True},
+                }
+            ),
+        ),
+        Tool(
+            name="driver_help",
+            description="指定メソッドの signature / docstring を返します。",
+            inputSchema=build_schema(
+                properties={
+                    **common_props,
+                    "method": {"type": "string"},
+                },
+                required=["method"],
+            ),
+        ),
+        Tool(
+            name="driver_call",
+            description=(
+                "NativeBrowserDriverの任意メソッドを method + args/kwargs で実行します。"
+                " 返り値はJSON/文字列/画像（base64）として返却します。"
+            ),
+            inputSchema=build_schema(
+                properties={
+                    **common_props,
+                    "method": {"type": "string"},
+                    "args": {"type": "array", "default": []},
+                    "kwargs": {"type": "object", "default": {}},
+                },
+                required=["method"],
+            ),
+        ),
+    ]
 
 
 
@@ -366,33 +504,91 @@ def _result_to_contents(name: str, result: Any, arguments: dict[str, Any]) -> li
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
-    """??????????????"""
+    """固定ツールの実行（Reflect+Invoke）。"""
     try:
         arguments = arguments or {}
-        driver = get_driver()
-        if not hasattr(driver, name):
-            return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")
 
-        member = getattr(driver, name)
-        if callable(member):
-            sig = inspect.signature(member)
-            allowed_params = {
-                param.name
-                for param in sig.parameters.values()
-                if param.name != "self"
-                and param.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        # 共通: driver選択
+        browser = str(arguments.get("browser", "chrome")).lower()
+        start_if_not_found = bool(arguments.get("start_if_not_found", False))
+        driver = get_driver(browser=browser, start_if_not_found=start_if_not_found)
+
+        if name == "driver_get_capabilities":
+            payload = _get_capabilities_payload(
+                driver,
+                include_private=bool(arguments.get("include_private", False)),
+                include_properties=bool(arguments.get("include_properties", True)),
+                include_inherited=bool(arguments.get("include_inherited", True)),
+            )
+            return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+        if name == "driver_help":
+            method = str(arguments.get("method", "")).strip()
+            if not method:
+                return _error_text("invalid_input", "driver_help: 'method' is required")
+
+            if not _is_public_driver_member(method):
+                return _error_text("invalid_input", f"driver_help: method not allowed: {method}")
+
+            if not hasattr(driver, method):
+                return _error_text("unknown_tool", f"driver_help: unknown method: {method}")
+
+            member = getattr(driver, method)
+            # property?
+            if isinstance(getattr(type(driver), method, None), property):
+                doc = (getattr(getattr(type(driver), method), "fget").__doc__ or "").strip()
+                payload = {
+                    "ok": True,
+                    "driver_class": type(driver).__name__,
+                    "name": method,
+                    "kind": "property",
+                    "doc": doc,
+                }
+                return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+            if callable(member):
+                try:
+                    sig = inspect.signature(member)
+                    sig_json = _signature_to_json(sig)
+                except Exception:
+                    sig_json = {"signature": "", "params": [], "return_annotation": ""}
+
+                doc = (getattr(member, "__doc__", None) or "").strip()
+                payload = {
+                    "ok": True,
+                    "driver_class": type(driver).__name__,
+                    "name": method,
+                    "kind": "method",
+                    **sig_json,
+                    "doc": doc,
+                }
+                return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+            payload = {
+                "ok": True,
+                "driver_class": type(driver).__name__,
+                "name": method,
+                "kind": "value",
+                "value": str(member),
             }
-            unknown_params = sorted(set(arguments) - allowed_params)
-            if unknown_params:
-                return _error_text(
-                    "invalid_input",
-                    f"call_tool: unexpected arguments for '{name}': {unknown_params}",
-                )
-            result = member(**arguments)
-        else:
-            result = member
+            return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
-        return _result_to_contents(name, result, arguments)
+        if name == "driver_call":
+            method = str(arguments.get("method", "")).strip()
+            args = arguments.get("args") or []
+            kwargs = arguments.get("kwargs") or {}
+            if not isinstance(args, list):
+                return _error_text("invalid_input", "driver_call: 'args' must be an array")
+            if not isinstance(kwargs, dict):
+                return _error_text("invalid_input", "driver_call: 'kwargs' must be an object")
+
+            result = _invoke_driver_method(driver, method=method, args=args, kwargs=kwargs)
+
+            # 画像返却のため、元メソッド名を渡す（screenshot等の特例処理を活かす）
+            return _result_to_contents(method, result, {**kwargs, **{"args": args}})
+
+        # 未知のtool名
+        return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")
     except Exception as e:
         payload = _exception_to_error_payload(e)
         return _error_text(payload["code"], payload["message"], payload.get("data"))
