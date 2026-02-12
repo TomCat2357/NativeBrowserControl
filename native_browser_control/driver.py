@@ -805,6 +805,37 @@ def _force_foreground(hwnd: int) -> None:
 class NativeBrowserDriver:
     """Chrome/Edge共通の基底クラス"""
 
+    @classmethod
+    def get_browser_window(
+        cls,
+        browser: str = "chrome",
+        *,
+        extra_title_keywords: Optional[Iterable[str]] = None,
+        title_regex: Optional[str] = None,
+        require_visible: bool = False,
+        require_enabled: bool = False,
+        exclude_minimized: bool = False,
+        class_name: Optional[str] = None,
+        control_type: str = "Window",
+        window_predicate=None,
+        exe_name: Optional[str] = None,
+        retries: int = 3,
+    ):
+        """ブラウザウィンドウを1件取得する（クラスメソッド）。"""
+        return globals()["get_browser_window"](
+            browser=browser,
+            extra_title_keywords=extra_title_keywords,
+            title_regex=title_regex,
+            require_visible=require_visible,
+            require_enabled=require_enabled,
+            exclude_minimized=exclude_minimized,
+            class_name=class_name,
+            control_type=control_type,
+            window_predicate=window_predicate,
+            exe_name=exe_name,
+            retries=retries,
+        )
+
     def __init__(
         self,
         browser: str = "chrome",
