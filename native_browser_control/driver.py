@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import io
+import inspect
 import logging
 import os
 import re
@@ -838,6 +839,42 @@ def _force_foreground(hwnd: int) -> None:
 
 class NativeBrowserDriver:
     """Chrome/Edge共通の基底クラス"""
+
+    @classmethod
+    def tool_info(cls) -> dict[str, Any]:
+        """ドライバーが公開するメソッド一覧とシグネチャを返す。"""
+        methods: dict[str, dict[str, Any]] = {}
+
+        for name in dir(cls):
+            if name.startswith("_"):
+                continue
+
+            raw_member = inspect.getattr_static(cls, name)
+            if isinstance(raw_member, property):
+                continue
+
+            member = getattr(cls, name)
+            if not callable(member):
+                continue
+
+            try:
+                signature = str(inspect.signature(member))
+            except Exception:
+                signature = ""
+
+            doc = inspect.getdoc(member) or ""
+
+            methods[name] = {
+                "signature": signature,
+                "summary": doc.splitlines()[0] if doc else "",
+                "doc": doc,
+            }
+
+        return {
+            "driver": cls.__name__,
+            "module": cls.__module__,
+            "methods": methods,
+        }
 
     @classmethod
     def get_browser_window(

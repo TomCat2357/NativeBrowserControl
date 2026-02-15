@@ -22,6 +22,8 @@ from native_browser_control.driver import (
     ActionResult,
     NativeBrowserDriver,
     NativeBrowserError,
+    NativeChromeDriver,
+    NativeEdgeDriver,
     BROWSER_CONFIG,
 )
 
@@ -29,6 +31,13 @@ __version__ = "0.1.0"
 
 _sessions: dict[str, NativeBrowserDriver] = {}
 _active_session_by_browser: dict[str, str] = {}
+
+
+def _driver_class_for_browser(browser: str) -> type[NativeBrowserDriver]:
+    key = (browser or "chrome").lower()
+    if key == "edge":
+        return NativeEdgeDriver
+    return NativeChromeDriver
 
 
 def build_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
@@ -216,7 +225,8 @@ def _create_session_from_window(browser: str, window: Any) -> NativeBrowserDrive
     if key not in BROWSER_CONFIG:
         raise ValueError(f"unsupported browser: {browser}")
 
-    driver = object.__new__(NativeBrowserDriver)
+    driver_cls = _driver_class_for_browser(key)
+    driver = object.__new__(driver_cls)
     driver.browser = key
     driver._config = BROWSER_CONFIG[key]
     driver.current_elements = []
@@ -312,6 +322,11 @@ async def list_tools() -> list[Tool]:
                 required=["method"],
             ),
         ),
+        Tool(
+            name="driver_tool_info",
+            description="ドライバーが提供する公開メソッド一覧とシグネチャを返します。",
+            inputSchema=build_schema(properties={**common_props}),
+        ),
     ]
 
 
@@ -371,6 +386,15 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 _, target = _resolve_session(session_id, browser)
             payload = _read_driver_member(target, member)
             return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+        if name == "driver_tool_info":
+            session_id = str(arguments.get("session_id", "")).strip()
+            if session_id:
+                _, driver = _resolve_session(session_id, browser)
+                info = type(driver).tool_info()
+            else:
+                info = _driver_class_for_browser(browser).tool_info()
+            return [TextContent(type="text", text=json.dumps(info, ensure_ascii=False, indent=2))]
 
         if name == "driver_call":
             method = str(arguments.get("method", "")).strip()
