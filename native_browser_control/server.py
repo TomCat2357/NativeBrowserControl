@@ -27,7 +27,7 @@ from native_browser_control.driver import (
     BROWSER_CONFIG,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 _sessions: dict[str, NativeBrowserDriver] = {}
 _active_session_by_browser: dict[str, str] = {}
