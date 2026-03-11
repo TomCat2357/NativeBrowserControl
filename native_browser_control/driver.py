@@ -1,44 +1,44 @@
-#%%
+# %%
 from __future__ import annotations
+
+import ctypes
+import io
+import logging
+import os
+import re
+import subprocess
 import sys
 import time
-import io
-import re
-import os
-import ctypes
-import subprocess
-import logging
 from dataclasses import dataclass
-from typing import Any, Optional, Literal, Union, Iterable, List, Callable
+from typing import Any, Callable, Iterable, List, Literal, Optional, Union
 
-from pywinauto import Desktop, Application, mouse
-from pywinauto.keyboard import send_keys
+import mss
+import win32clipboard
 import win32con
 import win32gui
-import win32ui
-import win32clipboard
 import win32process
+import win32ui
 from PIL import Image
-import mss
-
+from pywinauto import Application, Desktop, mouse
 from pywinauto.findwindows import find_windows
+from pywinauto.keyboard import send_keys
 
 # ロガーの設定
 # ロガーのフォーマット設定
 logging.basicConfig(
     level=logging.INFO,  # 必要に応じて logging.DEBUG に変更
-    format='%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
+    format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
         logging.StreamHandler()  # コンソールに出力
         # logging.FileHandler("debug.log", encoding="utf-8") # ファイルに保存したい場合は有効化
-    ]
+    ],
 )
 
 logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
-logger.debug('Debug')
+logger.debug("Debug")
 
 desktop = Desktop(backend="uia")
 
@@ -53,15 +53,27 @@ def _env_exe_path(env_var: str, *parts: str) -> Optional[str]:
 def _default_exe_paths(browser: str) -> list[str]:
     if browser == "chrome":
         candidates = [
-            _env_exe_path("ProgramFiles", "Google", "Chrome", "Application", "chrome.exe"),
-            _env_exe_path("ProgramFiles(x86)", "Google", "Chrome", "Application", "chrome.exe"),
-            _env_exe_path("LocalAppData", "Google", "Chrome", "Application", "chrome.exe"),
+            _env_exe_path(
+                "ProgramFiles", "Google", "Chrome", "Application", "chrome.exe"
+            ),
+            _env_exe_path(
+                "ProgramFiles(x86)", "Google", "Chrome", "Application", "chrome.exe"
+            ),
+            _env_exe_path(
+                "LocalAppData", "Google", "Chrome", "Application", "chrome.exe"
+            ),
         ]
     elif browser == "edge":
         candidates = [
-            _env_exe_path("ProgramFiles(x86)", "Microsoft", "Edge", "Application", "msedge.exe"),
-            _env_exe_path("ProgramFiles", "Microsoft", "Edge", "Application", "msedge.exe"),
-            _env_exe_path("LocalAppData", "Microsoft", "Edge", "Application", "msedge.exe"),
+            _env_exe_path(
+                "ProgramFiles(x86)", "Microsoft", "Edge", "Application", "msedge.exe"
+            ),
+            _env_exe_path(
+                "ProgramFiles", "Microsoft", "Edge", "Application", "msedge.exe"
+            ),
+            _env_exe_path(
+                "LocalAppData", "Microsoft", "Edge", "Application", "msedge.exe"
+            ),
         ]
     else:
         candidates = []
@@ -133,7 +145,9 @@ def _parse_index_range_slices(index_ranges: str) -> list[slice]:
 
 def _indices_from_slices(range_slices: list[slice], *, length: int) -> list[int]:
     if length < 0:
-        raise InvalidInputError("indices_from_slices: length must be >= 0", code="invalid_length")
+        raise InvalidInputError(
+            "indices_from_slices: length must be >= 0", code="invalid_length"
+        )
     if not range_slices:
         return list(range(length))
 
@@ -219,7 +233,9 @@ def _match_browser_window(
             if image_path:
                 lowered_path = image_path.lower()
                 lowered_filter = exe_filter.lower()
-                if lowered_filter not in lowered_path and not lowered_path.endswith(lowered_filter):
+                if lowered_filter not in lowered_path and not lowered_path.endswith(
+                    lowered_filter
+                ):
                     return False
         except Exception:
             return False
@@ -267,7 +283,20 @@ def find_browser_windows(
         )
 
     keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
-    title_re = title_regex or config.get("title_regex")
+    if title_regex:
+        _custom_re = re.compile(title_regex)
+        _existing_predicate = window_predicate
+
+        def _combined_predicate(w, _pred=_existing_predicate, _re=_custom_re):
+            t = w.window_text() or ""
+            if not _re.search(t):
+                return False
+            return _pred(w) if _pred else True
+
+        window_predicate = _combined_predicate
+        title_re = config.get("title_regex")
+    else:
+        title_re = config.get("title_regex")
     exe_filter = exe_name or config.get("exe_name")
     retries = max(1, int(retries))
 
@@ -446,7 +475,9 @@ def launch_browser_driver(
 
     _launch_browser_process(config)
     time.sleep(start_delay)
-    return NativeBrowserDriver(browser=browser, retries=retries, start_if_not_found=False)
+    return NativeBrowserDriver(
+        browser=browser, retries=retries, start_if_not_found=False
+    )
 
 
 def connect_browser_by_index(
@@ -479,7 +510,9 @@ def connect_browser_by_index(
     )
 
     if not windows:
-        raise WindowNotFoundError(f"connect_browser_by_index: no {browser} windows found")
+        raise WindowNotFoundError(
+            f"connect_browser_by_index: no {browser} windows found"
+        )
 
     # Python-style indices (negative indices supported)
     try:
@@ -513,7 +546,9 @@ def connect_browser_by_index(
 def _enable_dpi_awareness() -> None:
     try:
         DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
-        ctypes.windll.user32.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        )
         return
     except Exception:
         pass
@@ -537,7 +572,9 @@ def _set_clipboard_text(text: str) -> None:
 class NativeBrowserError(Exception):
     code = "native_browser_error"
 
-    def __init__(self, message: str, *, code: str | None = None, data: Any | None = None):
+    def __init__(
+        self, message: str, *, code: str | None = None, data: Any | None = None
+    ):
         super().__init__(message)
         self.code = code or self.code
         self.data = data
@@ -594,7 +631,9 @@ class ActionResult:
     data: Any | None = None
 
     @staticmethod
-    def success(message: str, *, data: Any | None = None, code: str = "ok") -> "ActionResult":
+    def success(
+        message: str, *, data: Any | None = None, code: str = "ok"
+    ) -> "ActionResult":
         return ActionResult(True, code, message, data=data)
 
     @staticmethod
@@ -677,6 +716,7 @@ class Rect:
 @dataclass(frozen=True)
 class BrowserWindowInfo:
     """起動中のブラウザウィンドウ情報（Rect + 前面判定付き）。"""
+
     browser: str
     title: str
     pid: int
@@ -698,7 +738,9 @@ def _get_process_image_path(pid: int) -> Optional[str]:
     PROCESS_VM_READ = 0x0010
     handle = None
     try:
-        handle = win32process.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+        handle = win32process.OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid
+        )
         try:
             return win32process.GetModuleFileNameEx(handle, 0)
         finally:
@@ -722,7 +764,9 @@ def _launch_browser_process(config: dict[str, Any]) -> None:
         subprocess.Popen(start_command, shell=True)
         return
 
-    raise LaunchError("launch_browser_process: no valid browser launch configuration found")
+    raise LaunchError(
+        "launch_browser_process: no valid browser launch configuration found"
+    )
 
 
 def _is_probably_blank(img: Image.Image) -> bool:
@@ -789,7 +833,12 @@ def _capture_by_screen_rect(rect: Rect) -> Image.Image:
         raise ScreenshotError("capture_screen: invalid rect size (width/height <= 0)")
 
     with mss.mss() as sct:
-        monitor = {"left": rect.left, "top": rect.top, "width": rect.width, "height": rect.height}
+        monitor = {
+            "left": rect.left,
+            "top": rect.top,
+            "width": rect.width,
+            "height": rect.height,
+        }
         shot = sct.grab(monitor)
         return Image.frombytes("RGB", shot.size, shot.rgb)
 
@@ -891,7 +940,6 @@ class NativeBrowserDriver:
         self.window.wait("visible", timeout=20)
         logger.info(f"Connected to {self.browser.capitalize()} (PID: {pid}).")
 
-
     @property
     def hwnd(self) -> int:
         return int(self.window.handle)
@@ -905,7 +953,9 @@ class NativeBrowserDriver:
         """撮影・操作の成功率を上げるために復帰/最大化/前面化する"""
         hwnd = self.hwnd
         if not win32gui.IsWindow(hwnd):
-            raise ExternalApiError("ensure_visible: invalid hwnd (window does not exist)")
+            raise ExternalApiError(
+                "ensure_visible: invalid hwnd (window does not exist)"
+            )
 
         try:
             if win32gui.IsIconic(hwnd):
@@ -932,7 +982,9 @@ class NativeBrowserDriver:
         settle_ms: int,
         focus: bool = True,
     ) -> None:
-        self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+        self.ensure_visible(
+            maximize=maximize, foreground=foreground, settle_ms=settle_ms
+        )
         if focus:
             try:
                 self.window.set_focus()
@@ -950,7 +1002,9 @@ class NativeBrowserDriver:
         focus: bool = True,
         post_sleep_s: float = 0.0,
     ) -> None:
-        self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+        self.ensure_visible(
+            maximize=maximize, foreground=foreground, settle_ms=settle_ms
+        )
         if focus:
             try:
                 self.window.set_focus()
@@ -972,7 +1026,9 @@ class NativeBrowserDriver:
         settle_ms: int = 0,
     ) -> None:
         if foreground or maximize:
-            self.ensure_visible(maximize=maximize, foreground=foreground, settle_ms=settle_ms)
+            self.ensure_visible(
+                maximize=maximize, foreground=foreground, settle_ms=settle_ms
+            )
         elif settle_ms > 0:
             time.sleep(settle_ms / 1000.0)
 
@@ -1014,7 +1070,11 @@ class NativeBrowserDriver:
                 data=latest["text"],
             )
 
-        message = "clipboard_wait: updated" if latest["updated"] else "clipboard_wait: read (update not confirmed)"
+        message = (
+            "clipboard_wait: updated"
+            if latest["updated"]
+            else "clipboard_wait: read (update not confirmed)"
+        )
         return ActionResult.success(message, data=latest["text"])
 
     def _perform_clipboard_transfer(
@@ -1035,7 +1095,9 @@ class NativeBrowserDriver:
         previous_result = _get_clipboard_text()
         previous = previous_result.data if previous_result.ok else None
         send_keys(shortcut)
-        return self._wait_for_clipboard_text(previous, timeout_s=timeout_s, interval_s=0.05)
+        return self._wait_for_clipboard_text(
+            previous, timeout_s=timeout_s, interval_s=0.05
+        )
 
     def set_edit_text(self, index: int, text: str) -> str:
         """スキャンした要素のテキストを設定する"""
@@ -1136,7 +1198,9 @@ class NativeBrowserDriver:
                 ok = try_printwindow()
 
         if not img:
-            raise ScreenshotError("screenshot: failed to capture screenshot. " + " | ".join(errors))
+            raise ScreenshotError(
+                "screenshot: failed to capture screenshot. " + " | ".join(errors)
+            )
 
         if file_path:
             save_kwargs = {}
@@ -1161,7 +1225,11 @@ class NativeBrowserDriver:
         self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
         previous_url = self.get_address_bar_url()
         send_keys("^l")
-        wait_until(lambda: self.get_address_bar_url() != "Unknown", timeout_s=1.0, interval_s=0.05)
+        wait_until(
+            lambda: self.get_address_bar_url() != "Unknown",
+            timeout_s=1.0,
+            interval_s=0.05,
+        )
         _set_clipboard_text(url)
         send_keys("^v")
         send_keys("{ENTER}")
@@ -1225,7 +1293,6 @@ class NativeBrowserDriver:
 
         return "Unknown"
 
-
     def scan_page_elements(
         self,
         control_type=None,
@@ -1237,7 +1304,9 @@ class NativeBrowserDriver:
         settle_ms: int = 0,
         update_mode: Literal["overwrite", "add", "preserve"] = "overwrite",
     ):
-        self._prepare_for_read(foreground=foreground, maximize=maximize, settle_ms=settle_ms)
+        self._prepare_for_read(
+            foreground=foreground, maximize=maximize, settle_ms=settle_ms
+        )
 
         elements_map: dict[int, Any] = {}
         elements_info: dict[int, dict[str, object]] = {}
@@ -1247,7 +1316,11 @@ class NativeBrowserDriver:
             descendants_kwargs["control_type"] = control_type
         if title is not None:
             descendants_kwargs["title"] = title
-        all_items = self.window.descendants(**descendants_kwargs) if descendants_kwargs else self.window.descendants()
+        all_items = (
+            self.window.descendants(**descendants_kwargs)
+            if descendants_kwargs
+            else self.window.descendants()
+        )
 
         truncated = False
         max_elements = int(max_elements) if max_elements is not None else 0
@@ -1290,8 +1363,12 @@ class NativeBrowserDriver:
             self.current_elements_truncated = truncated
         elif update_mode == "add":
             # 既存インデックスを保持して新しいインデックスで追加
-            max_index = max(self.current_elements.keys()) if self.current_elements else -1
-            for idx, (elem, info) in enumerate(zip(elements_map.values(), elements_info.values())):
+            max_index = (
+                max(self.current_elements.keys()) if self.current_elements else -1
+            )
+            for idx, (elem, info) in enumerate(
+                zip(elements_map.values(), elements_info.values())
+            ):
                 new_idx = max_index + idx + 1
                 self.current_elements[new_idx] = elem
                 self.current_elements_info[new_idx] = info
@@ -1322,11 +1399,17 @@ class NativeBrowserDriver:
 
         control_types_list = None
         if control_types:
-            control_types_list = [control_types] if isinstance(control_types, str) else list(control_types)
+            control_types_list = (
+                [control_types]
+                if isinstance(control_types, str)
+                else list(control_types)
+            )
 
         class_names_list = None
         if class_names:
-            class_names_list = [class_names] if isinstance(class_names, str) else list(class_names)
+            class_names_list = (
+                [class_names] if isinstance(class_names, str) else list(class_names)
+            )
 
         compiled_regex = re.compile(name_regex) if name_regex else None
         compiled_value_regex = re.compile(value_regex) if value_regex else None
@@ -1403,12 +1486,17 @@ class NativeBrowserDriver:
                         continue
 
                 if control_types_list:
-                    if element_control_type is None or element_control_type not in control_types_list:
+                    if (
+                        element_control_type is None
+                        or element_control_type not in control_types_list
+                    ):
                         continue
 
                 if min_width is not None or min_height is not None:
                     rect = item.rectangle()
-                    if (min_width is not None and rect.width() <= min_width) or (min_height is not None and rect.height() <= min_height):
+                    if (min_width is not None and rect.width() <= min_width) or (
+                        min_height is not None and rect.height() <= min_height
+                    ):
                         continue
 
                 if only_visible:
@@ -1483,9 +1571,13 @@ class NativeBrowserDriver:
         if output_mode == "simple":
             result = f"Filtered {len(elements_map)} elements."
         elif output_mode == "summary":
-            result = self._format_elements_summary(elements_map, elements_info, truncated=False)
+            result = self._format_elements_summary(
+                elements_map, elements_info, truncated=False
+            )
         elif output_mode == "full":
-            result = self._format_elements_list(elements_map, elements_info, truncated=False)
+            result = self._format_elements_list(
+                elements_map, elements_info, truncated=False
+            )
         else:
             raise InvalidInputError(
                 f"filter_current_elements: unknown output mode: {output!r}",
@@ -1527,11 +1619,17 @@ class NativeBrowserDriver:
 
         control_types_list = None
         if control_types:
-            control_types_list = [control_types] if isinstance(control_types, str) else list(control_types)
+            control_types_list = (
+                [control_types]
+                if isinstance(control_types, str)
+                else list(control_types)
+            )
 
         class_names_list = None
         if class_names:
-            class_names_list = [class_names] if isinstance(class_names, str) else list(class_names)
+            class_names_list = (
+                [class_names] if isinstance(class_names, str) else list(class_names)
+            )
 
         compiled_regex = re.compile(name_regex) if name_regex else None
         compiled_value_regex = re.compile(value_regex) if value_regex else None
@@ -1608,12 +1706,17 @@ class NativeBrowserDriver:
                         continue
 
                 if control_types_list:
-                    if element_control_type is None or element_control_type not in control_types_list:
+                    if (
+                        element_control_type is None
+                        or element_control_type not in control_types_list
+                    ):
                         continue
 
                 if min_width is not None or min_height is not None:
                     rect = item.rectangle()
-                    if (min_width is not None and rect.width() <= min_width) or (min_height is not None and rect.height() <= min_height):
+                    if (min_width is not None and rect.width() <= min_width) or (
+                        min_height is not None and rect.height() <= min_height
+                    ):
                         continue
 
                 if only_visible:
@@ -1660,8 +1763,7 @@ class NativeBrowserDriver:
                 matched_indices.append(index)
             except Exception as e:
                 logger.debug(
-                    f"get_index: Exception at index {index}: "
-                    f"{type(e).__name__}: {e}"
+                    f"get_index: Exception at index {index}: {type(e).__name__}: {e}"
                 )
                 continue
 
@@ -1674,7 +1776,9 @@ class NativeBrowserDriver:
 
     def _ensure_current_elements_info(self) -> dict[int, dict[str, object]]:
         info = getattr(self, "current_elements_info", None)
-        if isinstance(info, dict) and set(info.keys()) == set(self.current_elements.keys()):
+        if isinstance(info, dict) and set(info.keys()) == set(
+            self.current_elements.keys()
+        ):
             return info
 
         info = {}
@@ -1699,7 +1803,9 @@ class NativeBrowserDriver:
             aid = "" if aid is None else str(aid)
 
             info[index] = {
-                "control_type": str(control_type) if control_type is not None else "Unknown",
+                "control_type": str(control_type)
+                if control_type is not None
+                else "Unknown",
                 "name": name,
                 "automation_id": aid,
             }
@@ -1826,6 +1932,7 @@ class NativeBrowserDriver:
 
     def scroll_down(self, amount: int = 500) -> None:
         """指定したピクセル数だけ下にスクロール"""
+
         def _action() -> None:
             for _ in range(amount // 100):
                 send_keys("{DOWN}")
@@ -1835,6 +1942,7 @@ class NativeBrowserDriver:
 
     def scroll_up(self, amount: int = 500) -> None:
         """指定したピクセル数だけ上にスクロール"""
+
         def _action() -> None:
             for _ in range(amount // 100):
                 send_keys("{UP}")
@@ -1862,7 +1970,9 @@ class NativeBrowserDriver:
     # テキスト入力・検索機能
     # ========================================
 
-    def type_text(self, text: str, *, method: Literal["paste", "type"] = "paste") -> None:
+    def type_text(
+        self, text: str, *, method: Literal["paste", "type"] = "paste"
+    ) -> None:
         """
         フォーカス中の要素にテキストを入力。
         method="paste" でクリップボード経由のCtrl+V（デフォルト）、
@@ -1877,11 +1987,15 @@ class NativeBrowserDriver:
         elif method == "type":
             send_keys(text, with_spaces=True)
         else:
-            raise InvalidInputError("type_text: method must be 'paste' or 'type'", code="invalid_method")
+            raise InvalidInputError(
+                "type_text: method must be 'paste' or 'type'", code="invalid_method"
+            )
 
         time.sleep(0.1)
 
-    def find_text_on_page(self, search_text: str, *, method: Literal["paste", "type"] = "paste") -> None:
+    def find_text_on_page(
+        self, search_text: str, *, method: Literal["paste", "type"] = "paste"
+    ) -> None:
         """Ctrl+Fでページ内検索を開き、指定方式で入力"""
         self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
         self.window.set_focus()
@@ -1952,7 +2066,9 @@ class NativeBrowserDriver:
         try:
             return self.window.window_text()
         except Exception as e:
-            raise ExternalApiError(f"get_page_title: failed to read window title: {e}") from e
+            raise ExternalApiError(
+                f"get_page_title: failed to read window title: {e}"
+            ) from e
 
     def get_browser_summary(self, max_text_len: int = 50) -> dict[str, object]:
         """現在のブラウザ概要をJSON向けdictで返す（途中出力なし）"""
@@ -2040,7 +2156,9 @@ class NativeBrowserDriver:
             for index, item in enumerate(items):
                 elements_map[index] = item
                 try:
-                    control_type = getattr(getattr(item, "element_info", None), "control_type", None)
+                    control_type = getattr(
+                        getattr(item, "element_info", None), "control_type", None
+                    )
                 except Exception:
                     control_type = None
 
@@ -2075,11 +2193,19 @@ class NativeBrowserDriver:
                     is_visible = False
 
                 if is_visible:
-                    descendants_payload["visible_total"] = int(descendants_payload["visible_total"]) + 1
-                    visible_map[control_type] = int(visible_map.get(control_type, 0)) + 1
+                    descendants_payload["visible_total"] = (
+                        int(descendants_payload["visible_total"]) + 1
+                    )
+                    visible_map[control_type] = (
+                        int(visible_map.get(control_type, 0)) + 1
+                    )
                 else:
-                    descendants_payload["invisible_total"] = int(descendants_payload["invisible_total"]) + 1
-                    invisible_map[control_type] = int(invisible_map.get(control_type, 0)) + 1
+                    descendants_payload["invisible_total"] = (
+                        int(descendants_payload["invisible_total"]) + 1
+                    )
+                    invisible_map[control_type] = (
+                        int(invisible_map.get(control_type, 0)) + 1
+                    )
 
             self.current_elements = elements_map
             self.current_elements_info = elements_info
@@ -2102,7 +2228,13 @@ class NativeBrowserDriver:
     # ページソース取得
     # ========================================
 
-    def get_page_source(self, *, wait_seconds: float = 1.5, close_after: bool = True, save_path: Optional[str] = None) -> str:
+    def get_page_source(
+        self,
+        *,
+        wait_seconds: float = 1.5,
+        close_after: bool = True,
+        save_path: Optional[str] = None,
+    ) -> str:
         """
         Ctrl+Uでソースビューを開き、全選択コピーしてHTMLを返す。
         close_after=Trueならソースビューのタブを閉じて元のタブに戻る。
@@ -2210,7 +2342,7 @@ class NativeBrowserDriver:
             x = (rect.left + rect.right) // 2
             y = (rect.top + rect.bottom) // 2
 
-            #self.ensure_visible(maximize=False, foreground=True, settle_ms=0)
+            # self.ensure_visible(maximize=False, foreground=True, settle_ms=0)
             mouse.move(coords=(x, y))
             time.sleep(0.1)
         except Exception as e:
@@ -2292,14 +2424,18 @@ class NativeChromeDriver(NativeBrowserDriver):
     """Chrome専用ドライバー（後方互換性のため）"""
 
     def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(browser="chrome", retries=retries, start_if_not_found=start_if_not_found)
+        super().__init__(
+            browser="chrome", retries=retries, start_if_not_found=start_if_not_found
+        )
 
 
 class NativeEdgeDriver(NativeBrowserDriver):
     """Microsoft Edge専用ドライバー"""
 
     def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(browser="edge", retries=retries, start_if_not_found=start_if_not_found)
+        super().__init__(
+            browser="edge", retries=retries, start_if_not_found=start_if_not_found
+        )
 
 
 if __name__ == "__main__":

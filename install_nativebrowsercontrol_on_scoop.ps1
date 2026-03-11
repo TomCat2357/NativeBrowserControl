@@ -35,6 +35,7 @@ if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
 }
 
 scoop update
+scoop install git
 
 # ----------------
 # uv install (via Scoop)
