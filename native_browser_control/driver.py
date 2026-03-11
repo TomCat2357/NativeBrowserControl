@@ -184,6 +184,7 @@ def _match_browser_window(
     *,
     keywords: list[str],
     title_re: Optional[str],
+    user_title_re: Optional[str] = None,
     require_visible: bool,
     require_enabled: bool,
     exclude_minimized: bool,
@@ -225,6 +226,9 @@ def _match_browser_window(
     keyword_hit = any(kw in title for kw in keywords) if keywords else False
     regex_hit = bool(re.search(title_re, title)) if title_re else False
     if not keyword_hit and not regex_hit:
+        return False
+
+    if user_title_re and not re.search(user_title_re, title):
         return False
 
     if exe_filter:
@@ -284,20 +288,7 @@ def find_browser_windows(
         )
 
     keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
-    if title_regex:
-        _custom_re = re.compile(title_regex)
-        _existing_predicate = window_predicate
-
-        def _combined_predicate(w, _pred=_existing_predicate, _re=_custom_re):
-            t = w.window_text() or ""
-            if not _re.search(t):
-                return False
-            return _pred(w) if _pred else True
-
-        window_predicate = _combined_predicate
-        title_re = config.get("title_regex")
-    else:
-        title_re = config.get("title_regex")
+    title_re = config.get("title_regex")
     exe_filter = exe_name or config.get("exe_name")
     retries = max(1, int(retries))
 
@@ -309,6 +300,7 @@ def find_browser_windows(
                 w,
                 keywords=keywords,
                 title_re=title_re,
+                user_title_re=title_regex,
                 require_visible=require_visible,
                 require_enabled=require_enabled,
                 exclude_minimized=exclude_minimized,
