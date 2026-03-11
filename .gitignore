@@ -1,4 +1,4 @@
-tmp*
+
 CLAUDE.md
 *.log
 !.gitignore
@@ -9,3 +9,4 @@ tests/*
 *.ipynb
 *.bak
 native_browser_control.egg-info*
+*test*

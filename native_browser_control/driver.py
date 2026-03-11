@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import io
+import inspect
 import logging
 import os
 import re
@@ -283,20 +284,7 @@ def find_browser_windows(
         )
 
     keywords = list(config["title_keywords"]) + list(extra_title_keywords or [])
-    if title_regex:
-        _custom_re = re.compile(title_regex)
-        _existing_predicate = window_predicate
-
-        def _combined_predicate(w, _pred=_existing_predicate, _re=_custom_re):
-            t = w.window_text() or ""
-            if not _re.search(t):
-                return False
-            return _pred(w) if _pred else True
-
-        window_predicate = _combined_predicate
-        title_re = config.get("title_regex")
-    else:
-        title_re = config.get("title_regex")
+    title_re = title_regex or config.get("title_regex")
     exe_filter = exe_name or config.get("exe_name")
     retries = max(1, int(retries))
 
@@ -336,12 +324,10 @@ def get_browser_window(
     window_predicate=None,
     exe_name: Optional[str] = None,
     retries: int = 3,
-    start_if_not_found: bool = False,
 ):
     """
     指定ブラウザのウィンドウを取得（既存ウィンドウのみ）。
 
-    起動されていない場合は例外を投げる。start_if_not_found=True の場合のみ起動を試みる。
     """
     config = BROWSER_CONFIG.get(browser)
     if not config:
@@ -366,25 +352,6 @@ def get_browser_window(
 
     if matches:
         return matches[0]
-
-    if start_if_not_found:
-        _launch_browser_process(config)
-        time.sleep(1)
-        matches = find_browser_windows(
-            browser,
-            extra_title_keywords=extra_title_keywords,
-            title_regex=title_regex,
-            require_visible=require_visible,
-            require_enabled=require_enabled,
-            exclude_minimized=exclude_minimized,
-            class_name=class_name,
-            control_type=control_type,
-            window_predicate=window_predicate,
-            exe_name=exe_name,
-            retries=retries,
-        )
-        if matches:
-            return matches[0]
 
     raise WindowNotFoundError(f"get_browser_window: {browser} window not found")
 
@@ -475,9 +442,7 @@ def launch_browser_driver(
 
     _launch_browser_process(config)
     time.sleep(start_delay)
-    return NativeBrowserDriver(
-        browser=browser, retries=retries, start_if_not_found=False
-    )
+    return NativeBrowserDriver(browser=browser, retries=retries)
 
 
 def connect_browser_by_index(
@@ -529,8 +494,8 @@ def connect_browser_by_index(
     driver = object.__new__(NativeBrowserDriver)
     driver.browser = browser
     driver._config = BROWSER_CONFIG[browser]
-    driver.current_elements = {}
-    driver.current_elements_info = {}
+    driver.current_elements = []
+    driver.current_elements_info = []
     driver.current_elements_truncated = False
     driver.app = None
     driver.window = None
@@ -875,6 +840,73 @@ def _force_foreground(hwnd: int) -> None:
 class NativeBrowserDriver:
     """Chrome/Edge共通の基底クラス"""
 
+    @classmethod
+    def tool_info(cls) -> dict[str, Any]:
+        """ドライバーが公開するメソッド一覧とシグネチャを返す。"""
+        methods: dict[str, dict[str, Any]] = {}
+
+        for name in dir(cls):
+            if name.startswith("_"):
+                continue
+
+            raw_member = inspect.getattr_static(cls, name)
+            if isinstance(raw_member, property):
+                continue
+
+            member = getattr(cls, name)
+            if not callable(member):
+                continue
+
+            try:
+                signature = str(inspect.signature(member))
+            except Exception:
+                signature = ""
+
+            doc = inspect.getdoc(member) or ""
+
+            methods[name] = {
+                "signature": signature,
+                "summary": doc.splitlines()[0] if doc else "",
+                "doc": doc,
+            }
+
+        return {
+            "driver": cls.__name__,
+            "module": cls.__module__,
+            "methods": methods,
+        }
+
+    @classmethod
+    def get_browser_window(
+        cls,
+        browser: str = "chrome",
+        *,
+        extra_title_keywords: Optional[Iterable[str]] = None,
+        title_regex: Optional[str] = None,
+        require_visible: bool = False,
+        require_enabled: bool = False,
+        exclude_minimized: bool = False,
+        class_name: Optional[str] = None,
+        control_type: str = "Window",
+        window_predicate=None,
+        exe_name: Optional[str] = None,
+        retries: int = 3,
+    ):
+        """ブラウザウィンドウを1件取得する（クラスメソッド）。"""
+        return globals()["get_browser_window"](
+            browser=browser,
+            extra_title_keywords=extra_title_keywords,
+            title_regex=title_regex,
+            require_visible=require_visible,
+            require_enabled=require_enabled,
+            exclude_minimized=exclude_minimized,
+            class_name=class_name,
+            control_type=control_type,
+            window_predicate=window_predicate,
+            exe_name=exe_name,
+            retries=retries,
+        )
+
     def __init__(
         self,
         browser: str = "chrome",
@@ -889,7 +921,7 @@ class NativeBrowserDriver:
         window_predicate=None,
         exe_name: Optional[str] = None,
         retries: int = 3,
-        start_if_not_found: bool = False,
+        launch: bool = False,
     ):
         if browser not in BROWSER_CONFIG:
             raise UnsupportedBrowserError(
@@ -901,27 +933,76 @@ class NativeBrowserDriver:
         self._config = BROWSER_CONFIG[browser]
         _enable_dpi_awareness()
 
-        self.current_elements = {}
-        self.current_elements_info = {}
+        self.current_elements = []
+        self.current_elements_info = []
         self.current_elements_truncated = False
         self.app = None
         self.window = None
 
         # 1. まずウィンドウを確実に取得する（なければ起動も含めて get_browser_window が担当）
-        found_window = get_browser_window(
-            browser,
-            extra_title_keywords=extra_title_keywords,
-            title_regex=title_regex,
-            require_visible=require_visible,
-            require_enabled=require_enabled,
-            exclude_minimized=exclude_minimized,
-            class_name=class_name,
-            control_type=control_type,
-            window_predicate=window_predicate,
-            exe_name=exe_name,
-            retries=retries,
-            start_if_not_found=start_if_not_found,
-        )
+        if launch:
+            existing_handles = {
+                int(w.handle)
+                for w in find_browser_windows(
+                    browser,
+                    extra_title_keywords=extra_title_keywords,
+                    title_regex=title_regex,
+                    require_visible=require_visible,
+                    require_enabled=require_enabled,
+                    exclude_minimized=exclude_minimized,
+                    class_name=class_name,
+                    control_type=control_type,
+                    window_predicate=window_predicate,
+                    exe_name=exe_name,
+                    retries=retries,
+                )
+            }
+            _launch_browser_process(self._config)
+            time.sleep(1)
+
+            found_window = None
+            max_attempts = max(1, int(retries))
+            for attempt in range(max_attempts):
+                matches = find_browser_windows(
+                    browser,
+                    extra_title_keywords=extra_title_keywords,
+                    title_regex=title_regex,
+                    require_visible=require_visible,
+                    require_enabled=require_enabled,
+                    exclude_minimized=exclude_minimized,
+                    class_name=class_name,
+                    control_type=control_type,
+                    window_predicate=window_predicate,
+                    exe_name=exe_name,
+                    retries=1,
+                )
+                for w in matches:
+                    if int(w.handle) not in existing_handles:
+                        found_window = w
+                        break
+                if found_window:
+                    break
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+
+            if not found_window:
+                raise WindowNotFoundError(
+                    f"NativeBrowserDriver: launched {browser} but new window not found"
+                )
+        else:
+            found_window = get_browser_window(
+                browser,
+                extra_title_keywords=extra_title_keywords,
+                title_regex=title_regex,
+                require_visible=require_visible,
+                require_enabled=require_enabled,
+                exclude_minimized=exclude_minimized,
+                class_name=class_name,
+                control_type=control_type,
+                window_predicate=window_predicate,
+                exe_name=exe_name,
+                retries=retries,
+            )
 
         # 2. 取得したウィンドウ情報を元に接続する
         self.connect(found_window)
@@ -1107,7 +1188,7 @@ class NativeBrowserDriver:
 
     def set_edit_text_result(self, index: int, text: str) -> ActionResult:
         """スキャンした要素のテキストを設定する（ActionResult版）"""
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             return ActionResult.failure(
                 "element_not_found",
                 f"set_edit_text: element not found (index={index})",
@@ -1308,8 +1389,8 @@ class NativeBrowserDriver:
             foreground=foreground, maximize=maximize, settle_ms=settle_ms
         )
 
-        elements_map: dict[int, Any] = {}
-        elements_info: dict[int, dict[str, object]] = {}
+        elements_list: list[Any] = []
+        elements_info_list: list[dict[str, object]] = []
 
         descendants_kwargs: dict[str, Any] = {}
         if control_type is not None:
@@ -1325,7 +1406,7 @@ class NativeBrowserDriver:
         truncated = False
         max_elements = int(max_elements) if max_elements is not None else 0
         for item in all_items:
-            if len(elements_map) >= max_elements:
+            if len(elements_list) >= max_elements:
                 truncated = True
                 break
 
@@ -1348,35 +1429,30 @@ class NativeBrowserDriver:
                 aid = ""
             aid = "" if aid is None else str(aid)
 
-            index = len(elements_map)
-            elements_map[index] = item
-            elements_info[index] = {
-                "control_type": str(f_class) if f_class is not None else "Unknown",
-                "name": name or "",
-                "automation_id": aid,
-            }
+            elements_list.append(item)
+            elements_info_list.append(
+                {
+                    "control_type": str(f_class) if f_class is not None else "Unknown",
+                    "name": name or "",
+                    "automation_id": aid,
+                }
+            )
 
         if update_mode == "overwrite":
             # 現在の要素を完全に置き換え
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
             self.current_elements_truncated = truncated
         elif update_mode == "add":
-            # 既存インデックスを保持して新しいインデックスで追加
-            max_index = (
-                max(self.current_elements.keys()) if self.current_elements else -1
-            )
-            for idx, (elem, info) in enumerate(
-                zip(elements_map.values(), elements_info.values())
-            ):
-                new_idx = max_index + idx + 1
-                self.current_elements[new_idx] = elem
-                self.current_elements_info[new_idx] = info
+            # 既存リストに追加
+            for elem, info in zip(elements_list, elements_info_list):
+                self.current_elements.append(elem)
+                self.current_elements_info.append(info)
         elif update_mode == "preserve":
             # スキャン結果は返すが、current_elementsは変更しない
             pass
 
-        return f"Found {len(elements_map)} elements."
+        return f"Found {len(elements_list)} elements."
 
     def filter_current_elements(
         self,
@@ -1421,7 +1497,7 @@ class NativeBrowserDriver:
         separator_hits = 0
 
         matched_items: list[tuple[Any, str, str, str]] = []
-        for index in sorted(self.current_elements.keys()):
+        for index in range(len(self.current_elements)):
             item = self.current_elements[index]
             try:
                 name = item.window_text()
@@ -1555,28 +1631,28 @@ class NativeBrowserDriver:
             f"matched {len(matched_items)} items"
         )
 
-        selected_indices = list(range(len(matched_items)))
-        elements_map: dict[int, Any] = {}
-        elements_info: dict[int, dict[str, object]] = {}
-        for current_index in selected_indices:
-            item, f_class, name, aid = matched_items[current_index]
-            elements_map[current_index] = item
-            elements_info[current_index] = {
-                "control_type": str(f_class) if f_class is not None else "Unknown",
-                "name": name or "",
-                "automation_id": aid,
-            }
+        elements_list: list[Any] = []
+        elements_info_list: list[dict[str, object]] = []
+        for item, f_class, name, aid in matched_items:
+            elements_list.append(item)
+            elements_info_list.append(
+                {
+                    "control_type": str(f_class) if f_class is not None else "Unknown",
+                    "name": name or "",
+                    "automation_id": aid,
+                }
+            )
 
         output_mode = str(output or "simple").lower()
         if output_mode == "simple":
-            result = f"Filtered {len(elements_map)} elements."
+            result = f"Filtered {len(elements_list)} elements."
         elif output_mode == "summary":
             result = self._format_elements_summary(
-                elements_map, elements_info, truncated=False
+                elements_list, elements_info_list, truncated=False
             )
         elif output_mode == "full":
             result = self._format_elements_list(
-                elements_map, elements_info, truncated=False
+                elements_list, elements_info_list, truncated=False
             )
         else:
             raise InvalidInputError(
@@ -1586,15 +1662,15 @@ class NativeBrowserDriver:
 
         if update_mode == "overwrite":
             # 現在の要素を完全に置き換え
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
             self.current_elements_truncated = False
         elif update_mode == "preserve":
             # フィルタ結果は返すが、current_elementsは変更しない
             pass
 
         logger.debug(
-            f"filter_current_elements: Final result = {len(elements_map)} elements, "
+            f"filter_current_elements: Final result = {len(elements_list)} elements, "
             f"update_mode={update_mode}"
         )
 
@@ -1641,7 +1717,7 @@ class NativeBrowserDriver:
         separator_hits = 0
 
         matched_indices: list[int] = []
-        for index in sorted(self.current_elements.keys()):
+        for index in range(len(self.current_elements)):
             item = self.current_elements[index]
             try:
                 name = item.window_text()
@@ -1774,15 +1850,13 @@ class NativeBrowserDriver:
 
         return matched_indices
 
-    def _ensure_current_elements_info(self) -> dict[int, dict[str, object]]:
+    def _ensure_current_elements_info(self) -> list[dict[str, object]]:
         info = getattr(self, "current_elements_info", None)
-        if isinstance(info, dict) and set(info.keys()) == set(
-            self.current_elements.keys()
-        ):
+        if isinstance(info, list) and len(info) == len(self.current_elements):
             return info
 
-        info = {}
-        for index, item in self.current_elements.items():
+        info = []
+        for index, item in enumerate(self.current_elements):
             try:
                 control_type = item.friendly_class_name()
             except Exception:
@@ -1802,27 +1876,29 @@ class NativeBrowserDriver:
                 aid = ""
             aid = "" if aid is None else str(aid)
 
-            info[index] = {
-                "control_type": str(control_type)
-                if control_type is not None
-                else "Unknown",
-                "name": name,
-                "automation_id": aid,
-            }
+            info.append(
+                {
+                    "control_type": str(control_type)
+                    if control_type is not None
+                    else "Unknown",
+                    "name": name,
+                    "automation_id": aid,
+                }
+            )
 
         self.current_elements_info = info
         return info
 
     def _format_elements_list(
         self,
-        elements_map: dict[int, Any],
-        elements_info: dict[int, dict[str, object]],
+        elements_list: list[Any],
+        elements_info_list: list[dict[str, object]],
         *,
         truncated: bool,
     ) -> str:
         lines: list[str] = []
-        for index in sorted(elements_map.keys()):
-            info = elements_info.get(index, {})
+        for index in range(len(elements_list)):
+            info = elements_info_list[index] if index < len(elements_info_list) else {}
             control_type = info.get("control_type") or "Unknown"
             name = info.get("name") or ""
             aid = info.get("automation_id")
@@ -1837,18 +1913,18 @@ class NativeBrowserDriver:
 
     def _format_elements_summary(
         self,
-        elements_map: dict[int, Any],
-        elements_info: dict[int, dict[str, object]],
+        elements_list: list[Any],
+        elements_info_list: list[dict[str, object]],
         *,
         truncated: bool,
     ) -> str:
         type_counts: dict[str, int] = {}
-        for index in elements_map.keys():
-            info = elements_info.get(index, {})
+        for index in range(len(elements_list)):
+            info = elements_info_list[index] if index < len(elements_info_list) else {}
             control_type = info.get("control_type") or "Unknown"
             type_counts[control_type] = type_counts.get(control_type, 0) + 1
 
-        summary_lines = [f"Total elements: {len(elements_map)}"]
+        summary_lines = [f"Total elements: {len(elements_list)}"]
         if type_counts:
             summary_lines.append("Elements by type:")
             for control_type_name, count in sorted(type_counts.items()):
@@ -1879,7 +1955,7 @@ class NativeBrowserDriver:
         return result.message
 
     def click_by_index_result(self, index: int) -> ActionResult:
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             return ActionResult.failure(
                 "element_not_found",
                 f"click_by_index: element not found (index={index})",
@@ -2141,8 +2217,8 @@ class NativeBrowserDriver:
             "visible_by_control_type": {},
             "invisible_by_control_type": {},
         }
-        self.current_elements = {}
-        self.current_elements_info = {}
+        self.current_elements = []
+        self.current_elements_info = []
         self.current_elements_truncated = False
         try:
             items = self.window.descendants()
@@ -2151,10 +2227,10 @@ class NativeBrowserDriver:
             visible_map = descendants_payload["visible_by_control_type"]
             invisible_map = descendants_payload["invisible_by_control_type"]
 
-            elements_map: dict[int, Any] = {}
-            elements_info: dict[int, dict[str, object]] = {}
-            for index, item in enumerate(items):
-                elements_map[index] = item
+            elements_list: list[Any] = []
+            elements_info_list: list[dict[str, object]] = []
+            for item in items:
+                elements_list.append(item)
                 try:
                     control_type = getattr(
                         getattr(item, "element_info", None), "control_type", None
@@ -2181,11 +2257,13 @@ class NativeBrowserDriver:
                     aid = ""
                 aid = "" if aid is None else str(aid)
 
-                elements_info[index] = {
-                    "control_type": control_type,
-                    "name": name,
-                    "automation_id": aid,
-                }
+                elements_info_list.append(
+                    {
+                        "control_type": control_type,
+                        "name": name,
+                        "automation_id": aid,
+                    }
+                )
 
                 try:
                     is_visible = bool(item.is_visible())
@@ -2207,8 +2285,8 @@ class NativeBrowserDriver:
                         int(invisible_map.get(control_type, 0)) + 1
                     )
 
-            self.current_elements = elements_map
-            self.current_elements_info = elements_info
+            self.current_elements = elements_list
+            self.current_elements_info = elements_info_list
         except Exception as e:
             descendants_payload["error"] = _norm_trunc(e)
 
@@ -2327,7 +2405,7 @@ class NativeBrowserDriver:
 
     def move_mouse_to_element(self, index: int) -> None:
         """スキャンした要素の位置にマウスを移動"""
-        if index not in self.current_elements:
+        if index < 0 or index >= len(self.current_elements):
             raise ElementNotFoundError(
                 f"move_mouse_to_element: element not found (index={index})",
                 code="element_not_found",
@@ -2423,24 +2501,20 @@ class NativeBrowserDriver:
 class NativeChromeDriver(NativeBrowserDriver):
     """Chrome専用ドライバー（後方互換性のため）"""
 
-    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(
-            browser="chrome", retries=retries, start_if_not_found=start_if_not_found
-        )
+    def __init__(self, *, retries: int = 3, launch: bool = False):
+        super().__init__(browser="chrome", retries=retries, launch=launch)
 
 
 class NativeEdgeDriver(NativeBrowserDriver):
     """Microsoft Edge専用ドライバー"""
 
-    def __init__(self, *, retries: int = 3, start_if_not_found: bool = False):
-        super().__init__(
-            browser="edge", retries=retries, start_if_not_found=start_if_not_found
-        )
+    def __init__(self, *, retries: int = 3, launch: bool = False):
+        super().__init__(browser="edge", retries=retries, launch=launch)
 
 
 if __name__ == "__main__":
     # Chrome の例
-    driver = NativeChromeDriver(start_if_not_found=True)
+    driver = NativeChromeDriver(launch=True)
     driver.navigate("https://www.google.com")
     driver.screenshot(file_path="chrome.png", prefer="printwindow", allow_fallback=True)
 
