@@ -1,13 +1,13 @@
 ---
 description: スキャン済み要素をフィルタリング
-argument-hint: [browser=chrome|edge] [filters...] [output=simple|summary|full]
+argument-hint: browser=chrome|edge [filters...] [output=simple|summary|full]
 allowed-tools: mcp__native-browser-control__filter_elements
 ---
 
 既にスキャンした要素をフィルタリングして表示します。
 
 **引数**
-- `browser`: 対象ブラウザ（chrome または edge、省略時: chrome）
+- `browser`: 対象ブラウザ（chrome または edge、必須）
 - `control_types`: フィルターするコントロールタイプ（複数指定可・OR条件、例: Button, Edit, Link）
 - `class_names`: friendly_class_name()で一致させるクラス名（複数指定可・OR条件）
 - `name_regex`: 要素名にマッチする正規表現
@@ -28,7 +28,7 @@ allowed-tools: mcp__native-browser-control__filter_elements
 **手順**
 1. 引数から各フィルターパラメータと出力モードを解析
 2. `mcp__native-browser-control__filter_elements` を呼び出す
-   - `browser`: 解析した値（省略時は "chrome"）
+   - `browser`: 解析した値（必須。省略は不可）
    - フィルターパラメータ: 指定された値
    - `output`: 解析した値（省略時は "simple"）
 3. フィルタリング結果を指定された出力モードで表示

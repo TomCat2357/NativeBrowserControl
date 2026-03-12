@@ -34,10 +34,23 @@ _active_session_by_browser: dict[str, str] = {}
 
 
 def _driver_class_for_browser(browser: str) -> type[NativeBrowserDriver]:
-    key = (browser or "chrome").lower()
+    key = str(browser or "").strip().lower()
+    if not key:
+        raise ValueError("browser is required")
+    if key == "chrome":
+        return NativeChromeDriver
     if key == "edge":
         return NativeEdgeDriver
-    return NativeChromeDriver
+    raise ValueError(f"unsupported browser: {browser}")
+
+
+def _normalize_browser(browser: Any) -> str:
+    key = str(browser or "").strip().lower()
+    if not key:
+        raise ValueError("browser is required")
+    if key not in BROWSER_CONFIG:
+        raise ValueError(f"unsupported browser: {browser}")
+    return key
 
 
 def build_schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
@@ -238,15 +251,26 @@ def _create_session_from_window(browser: str, window: Any) -> NativeBrowserDrive
     return driver
 
 
-def _resolve_session(session_id: str | None, browser: str) -> tuple[str, NativeBrowserDriver]:
+def _resolve_session(
+    session_id: str | None,
+    browser: str | None = None,
+) -> tuple[str, NativeBrowserDriver]:
     sid = (session_id or "").strip()
     if not sid:
+        if not browser:
+            raise ValueError("browser is required when session_id is omitted")
         sid = _active_session_by_browser.get(browser, "")
     if not sid:
-        raise ValueError("session_id is required; call driver_call(method='get_browser_window') first")
+        raise ValueError(
+            "session_id is required; call driver_call with browser and method='get_browser_window' first"
+        )
     driver = _sessions.get(sid)
     if not driver:
         raise ValueError(f"unknown session_id: {sid}")
+    if browser and driver.browser != browser:
+        raise ValueError(
+            f"session browser mismatch: session_id '{sid}' is bound to '{driver.browser}', not '{browser}'"
+        )
     return sid, driver
 
 
@@ -258,9 +282,9 @@ RESOURCES = {
         "description": "get_browser_windowでセッションを作ってからdriver_callする手順",
         "content": """# セッション手順
 
-1. `driver_call(method=\"get_browser_window\", class_target=true, kwargs={...})`
+1. `driver_call(browser=\"edge\", method=\"get_browser_window\", class_target=true, kwargs={...})`
 2. 返却された `session_id` を保持
-3. `driver_call(method=\"navigate\", session_id=\"...\", args=[\"https://example.com\"])`
+3. `driver_call(session_id=\"...\", method=\"navigate\", args=[\"https://example.com\"])`
 """,
     }
 }
@@ -289,7 +313,11 @@ async def read_resource(uri: str) -> str:
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     common_props = {
-        "browser": {"type": "string", "enum": ["chrome", "edge"], "default": "chrome"},
+        "browser": {
+            "type": "string",
+            "enum": ["chrome", "edge"],
+            "description": "Required unless session_id already identifies the target browser.",
+        },
         "session_id": {"type": "string"},
     }
 
@@ -376,23 +404,31 @@ def _result_to_contents(result: Any, arguments: dict[str, Any]) -> list[TextCont
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
     try:
         arguments = arguments or {}
-        browser = str(arguments.get("browser", "chrome")).lower()
+        raw_browser = arguments.get("browser")
+        session_id = str(arguments.get("session_id", "")).strip()
+        browser: str | None = None
+        if raw_browser not in (None, ""):
+            browser = _normalize_browser(raw_browser)
 
         if name == "driver_read":
             member = str(arguments.get("member", "")).strip()
-            session_id = str(arguments.get("session_id", "")).strip()
             target: Any = NativeBrowserDriver
             if session_id:
                 _, target = _resolve_session(session_id, browser)
+            else:
+                browser = _normalize_browser(browser)
+                target = _driver_class_for_browser(browser)
             payload = _read_driver_member(target, member)
+            if browser:
+                payload["browser"] = browser
             return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
 
         if name == "driver_tool_info":
-            session_id = str(arguments.get("session_id", "")).strip()
             if session_id:
                 _, driver = _resolve_session(session_id, browser)
                 info = type(driver).tool_info()
             else:
+                browser = _normalize_browser(browser)
                 info = _driver_class_for_browser(browser).tool_info()
             return [TextContent(type="text", text=json.dumps(info, ensure_ascii=False, indent=2))]
 
@@ -401,7 +437,6 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             args = arguments.get("args") or []
             kwargs = arguments.get("kwargs") or {}
             class_target = bool(arguments.get("class_target", False))
-            session_id = str(arguments.get("session_id", "")).strip()
 
             if not isinstance(args, list):
                 return _error_text("invalid_input", "driver_call: 'args' must be an array")
@@ -409,6 +444,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
                 return _error_text("invalid_input", "driver_call: 'kwargs' must be an object")
 
             if class_target or method == "get_browser_window":
+                if method == "get_browser_window":
+                    browser = _normalize_browser(browser)
                 result = _invoke_member(NativeBrowserDriver, method=method, args=args, kwargs=kwargs)
 
                 if method == "get_browser_window":
@@ -428,7 +465,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
 
             sid, driver = _resolve_session(session_id, browser)
             result = _invoke_member(driver, method=method, args=args, kwargs=kwargs)
-            _active_session_by_browser[browser] = sid
+            _active_session_by_browser[driver.browser] = sid
             return _result_to_contents(result, kwargs)
 
         return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")

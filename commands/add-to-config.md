@@ -4,7 +4,7 @@ argument-hint: [config-file-path]
 allowed-tools: Read, Write, Edit, AskUserQuestion
 ---
 
-指定ファイルに `native-browser-control` MCPサーバーの設定を追記/更新します。
+legacy 用として、指定ファイルに `native-browser-control` MCPサーバーの設定を追記/更新します。新規利用では repo 同梱 skill を優先してください。
 
 **対象ファイル**: `$ARGUMENTS`（省略時はプラグインスコープから自動選択）
 

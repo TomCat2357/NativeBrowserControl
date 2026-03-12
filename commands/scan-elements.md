@@ -1,13 +1,13 @@
 ---
 description: ページ上の要素をスキャン
-argument-hint: [browser=chrome|edge] [filters...]
+argument-hint: browser=chrome|edge [filters...]
 allowed-tools: mcp__native-browser-control__scan_elements
 ---
 
 ページ上の要素をスキャンしてリストアップします。
 
 **引数**
-- `browser`: 対象ブラウザ（chrome または edge、省略時: chrome）
+- `browser`: 対象ブラウザ（chrome または edge、必須）
 - `control_type`: フィルターするコントロールタイプ（例: Button, Edit, Link）
 - `control_types`: 追加フィルタ用コントロールタイプ（複数指定可・OR、例: ["Button", "Link"]）
 - `max_elements`: 取得する最大要素数（省略時: 500）
@@ -26,7 +26,7 @@ allowed-tools: mcp__native-browser-control__scan_elements
 **手順**
 1. 引数から各フィルターパラメータを解析
 2. `mcp__native-browser-control__scan_elements` を呼び出す
-   - `browser`: 解析した値（省略時は "chrome"）
+   - `browser`: 解析した値（必須。省略は不可）
    - その他のフィルターパラメータ: 指定された値
 3. スキャン結果をインデックス付きで表示
 4. 次のアクションとして `/browser:click-element <index>` または `/browser:set-element-text <index> <text>` を案内

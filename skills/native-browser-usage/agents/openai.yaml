@@ -1,0 +1,7 @@
+interface:
+  display_name: "Native Browser Driver"
+  short_description: "Chrome/Edge を direct driver で操作"
+  default_prompt: "Use $native-browser-usage to run a NativeBrowserDriver workflow with an explicit browser choice."
+
+policy:
+  allow_implicit_invocation: true
