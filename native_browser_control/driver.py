@@ -87,7 +87,7 @@ BROWSER_CONFIG = {
         "title_keywords": ["Chrome", "Google Chrome"],
         "title_regex": ".*Google Chrome.*",
         "start_command": ["start", "chrome"],
-        "exe_name": "chrome.exe",
+        # "exe_name": "chrome.exe",  # 権限エラー回避のためコメントアウト
         "exe_paths": _default_exe_paths("chrome"),
         "launch_args": [],
         "address_bar_title_candidates": [
@@ -333,6 +333,28 @@ def find_browser_windows(
             return matches
         if attempt < retries - 1:
             time.sleep(1)
+
+    # control_type フィルターで見つからなかった場合、フィルターなしで再試行
+    if control_type:
+        fallback_matches = [
+            w
+            for w in desktop.windows()
+            if _match_browser_window(
+                w,
+                keywords=keywords,
+                title_re=title_re,
+                user_title_re=title_regex,
+                require_visible=require_visible,
+                require_enabled=require_enabled,
+                exclude_minimized=exclude_minimized,
+                class_name=class_name,
+                window_predicate=window_predicate,
+                exe_filter=exe_filter,
+            )
+        ]
+        if fallback_matches:
+            return fallback_matches
+
     return []
 
 
