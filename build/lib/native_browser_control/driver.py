@@ -235,15 +235,34 @@ def _match_browser_window(
         try:
             pid = window.process_id()
             image_path = _get_process_image_path(pid)
-            if image_path:
+        except Exception:
+            logger.debug(
+                "Skipping exe_filter=%r for title=%r because process metadata was unavailable",
+                exe_filter,
+                title,
+                exc_info=True,
+            )
+        else:
+            if not image_path:
+                logger.debug(
+                    "Skipping exe_filter=%r for title=%r because process image path was unavailable (pid=%s)",
+                    exe_filter,
+                    title,
+                    pid,
+                )
+            else:
                 lowered_path = image_path.lower()
                 lowered_filter = exe_filter.lower()
                 if lowered_filter not in lowered_path and not lowered_path.endswith(
                     lowered_filter
                 ):
+                    logger.debug(
+                        "Rejected title=%r by exe_filter=%r (image_path=%r)",
+                        title,
+                        exe_filter,
+                        image_path,
+                    )
                     return False
-        except Exception:
-            return False
 
     if window_predicate and not window_predicate(window):
         return False
@@ -278,6 +297,7 @@ def find_browser_windows(
         - control_type: Desktop.windows の control_type
         - window_predicate: callable(window) -> bool で任意絞り込み
         - exe_name: 実行ファイル名/パスに含まれる文字列で絞り込み
+          （プロセス情報を取得できた場合のみ適用する best-effort）
         - retries: 探索リトライ回数
     """
     config = BROWSER_CONFIG.get(browser)
