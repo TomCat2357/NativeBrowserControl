@@ -18,7 +18,7 @@ Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium な�
 
 - Windows 環境
 - Chrome または Edge がインストール済み
-- Python 3.13 以上
+- Python 3.11.9
 - UI Automation の性質上、ブラウザを前面化して操作するため手動操作と競合する
 
 ## セットアップ
