@@ -28,6 +28,15 @@ PowerShell 例:
 .\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_workflow.py --spec-json '{"browser":"chrome","connect":{"window_index":0},"steps":[{"action":"summary"}]}'
 ```
 
+Agent 向けコマンドラッパー例:
+
+```powershell
+.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py scan --browser edge --window-index 0 --control-type Button --only-visible
+.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py click --browser edge --name-regex "^(検索|Search)$" --control-type Button --only-visible
+```
+
+`run_native_browser_command.py` の主な subcommand は `summary` / `navigate` / `scan` / `click` / `set-text` / `screenshot`。
+
 ## 運用手順
 
 1. ユーザーが対象ブラウザを明示していなければ確認する。
@@ -39,6 +48,8 @@ PowerShell 例:
 
 - `references/workflow-schema.md`: workflow JSON のスキーマと step 一覧
 - `references/workflow-examples.md`: よく使う workflow 例
+- `scripts/run_native_browser_command.py`: agent 向けのコア操作ラッパー
+- `../../.agents/skills/native-browser-usage/SKILL.md`: Codex CLI から見える repo skill 入口
 
 ## 補足
 

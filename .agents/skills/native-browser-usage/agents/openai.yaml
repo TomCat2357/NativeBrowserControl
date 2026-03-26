@@ -1,0 +1,6 @@
+interface:
+  display_name: "Native Browser Usage"
+  short_description: "Chrome/Edge control helpers for this repository."
+  default_prompt: "Use the matching native browser skill with an explicit browser and any needed filters."
+policy:
+  allow_implicit_invocation: false

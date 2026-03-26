@@ -6,8 +6,12 @@ CLAUDE.md
 !.claude-plugin
 digest.txt
 tests/*
+!tests/
+!tests/test_run_native_browser_command.py
 *.pyc*
 *.ipynb
 *.bak
 native_browser_control.egg-info*
 *test*
+!tests/
+!tests/test_run_native_browser_command.py

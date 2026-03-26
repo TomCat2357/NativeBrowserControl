@@ -2,7 +2,7 @@
 
 Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium なしで Chrome / Edge を直接操作するプロジェクトです。
 
-現在の推奨導線は、MCP server ではなく repo 同梱 skill `skills/native-browser-usage/` と補助スクリプト `skills/native-browser-usage/scripts/run_native_browser_workflow.py` を使う方法です。`server.py`、`commands/`、`.claude-plugin/` は互換のため残していますが legacy 扱いです。
+現在の推奨導線は、MCP server ではなく repo 同梱 skill `skills/native-browser-usage/` と補助スクリプト `skills/native-browser-usage/scripts/run_native_browser_workflow.py` / `skills/native-browser-usage/scripts/run_native_browser_command.py` を使う方法です。Codex CLI 向け repo skill は `.agents/skills/`、Claude Code 向け project skill / slash command は `.claude/skills/` に同梱しています。`server.py`、`commands/`、`.claude-plugin/` は互換のため残していますが legacy 扱いです。
 
 ## 主な機能
 
@@ -45,6 +45,46 @@ pip install -e .
 .\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_workflow.py --spec-file .\workflow.json
 ```
 
+### Agent 向けコマンド入口
+
+workflow JSON を毎回手書きせずに使うため、コア操作向けのラッパー `skills/native-browser-usage/scripts/run_native_browser_command.py` を追加しています。
+
+直接実行例:
+
+```powershell
+.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py scan --browser edge --window-index 0 --control-type Button --only-visible
+.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py click --browser edge --name-regex "^(検索|Search)$" --control-type Button --only-visible
+```
+
+対応 subcommand:
+
+- `summary`
+- `navigate`
+- `scan`
+- `click`
+- `set-text`
+- `screenshot`
+
+`click` と `set-text` は単一 invocation 内で `scan -> filter -> click/set_text` を組み立てます。前回の `scan` の index を別 invocation に持ち回す前提にはしません。
+
+### Claude Code / Codex CLI
+
+Claude Code:
+
+- `.claude/skills/native-browser-*/SKILL.md` を project skill として同梱
+- `/native-browser-scan browser=edge window_index=0 control_type=Button only_visible=true` のように実行
+
+Codex CLI:
+
+- `.agents/skills/native-browser-*/SKILL.md` を repo skill として同梱
+- `$native-browser-scan browser=edge window_index=0 control_type=Button only_visible=true` のように実行
+
+Codex CLI の slash wrapper（任意）:
+
+- `codex-prompts/*.md` に `/prompts:native-browser-*` 用テンプレートを同梱
+- `.\scripts\install_codex_prompts.ps1` を実行すると `~/.codex/prompts/` へコピー
+- 例: `/prompts:native-browser-scan browser=edge window_index=0 control_type=Button`
+
 ### workflow JSON の最小例
 
 ```json
@@ -84,6 +124,9 @@ pip install -e .
 - `skills/native-browser-usage/SKILL.md`
 - `skills/native-browser-usage/references/workflow-schema.md`
 - `skills/native-browser-usage/references/workflow-examples.md`
+- `.agents/skills/`
+- `.claude/skills/`
+- `codex-prompts/`
 
 ## Legacy: MCP server / plugin
 
@@ -112,6 +155,10 @@ MCP 設定追加の legacy command は `commands/add-to-config.md` に残して�
 - `native_browser_control/driver.py`: 実ブラウザ制御の本体
 - `skills/native-browser-usage/`: 推奨 skill
 - `skills/native-browser-usage/scripts/run_native_browser_workflow.py`: direct driver 実行入口
+- `skills/native-browser-usage/scripts/run_native_browser_command.py`: agent 向けコア操作ラッパー
+- `.agents/skills/`: Codex CLI の repo skill 入口
+- `.claude/skills/`: Claude Code の project skill / slash command 入口
+- `codex-prompts/`: Codex CLI の `/prompts:` 用テンプレート
 - `native_browser_control/server.py`: legacy MCP server
 
 ## 注意事項
