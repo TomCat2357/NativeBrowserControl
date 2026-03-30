@@ -451,35 +451,6 @@ def _run_step(
         )
         return payload, scan_ready
 
-    if action == "page_source":
-        save_file = _coerce_bool(step.get("save_file"), default=False)
-        save_path = step.get("save_path")
-        output_path = None
-        if save_file or save_path:
-            output_path = _resolve_output_path(
-                step,
-                artifact_dir,
-                default_prefix=f"step-{index:02d}-page-source",
-                extension=".html",
-                field_name="save_path",
-            )
-        html = driver.get_page_source(
-            wait_seconds=_coerce_float(step.get("wait_seconds"), default=1.5, name="wait_seconds"),
-            close_after=_coerce_bool(step.get("close_after"), default=True),
-            save_path=str(output_path) if output_path else None,
-        )
-        if output_path:
-            artifacts.append(
-                {
-                    "step_index": index,
-                    "action": action,
-                    "path": str(output_path),
-                    "kind": "html",
-                }
-            )
-        payload.update({"ok": True, "html": html, "path": str(output_path) if output_path else None})
-        return payload, scan_ready
-
     if action == "scan":
         update_mode = str(step.get("update_mode", "overwrite"))
         message = driver.scan_page_elements(
@@ -562,13 +533,6 @@ def _run_step(
         method = str(step.get("method", "paste"))
         driver.type_text(text, method=method)
         payload.update({"ok": True, "text": text, "method": method})
-        return payload, scan_ready
-
-    if action == "find_text":
-        search_text = step.get("search_text", step.get("text"))
-        method = str(step.get("method", "paste"))
-        driver.find_text_on_page(_require_str(search_text, "search_text"), method=method)
-        payload.update({"ok": True, "search_text": search_text, "method": method})
         return payload, scan_ready
 
     if action == "scroll":

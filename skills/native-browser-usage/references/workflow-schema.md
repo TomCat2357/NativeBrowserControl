@@ -60,14 +60,12 @@
 | `screenshot` | `fmt`, `quality`, `prefer`, `allow_fallback`, `prepare_window`, `maximize_before`, `foreground_before`, `settle_ms`, `file_path` |
 | `full_screenshot` | `monitor`, `fmt`, `quality`, `file_path` |
 | `page_text` | なし |
-| `page_source` | `wait_seconds`, `close_after`, `save_file`, `save_path` |
 | `scan` | `control_type`, `title`, `max_elements`, `foreground`, `maximize`, `settle_ms`, `update_mode` |
 | `filter` | `class_names`, `control_types`, `name_regex`, `value_regex`, `only_visible`, `require_enabled`, `min_width`, `min_height`, `only_focusable`, `automation_id_regex`, `omit_no_name`, `min_separator_count`, `update_mode`, `output` |
 | `get_index` | `class_names`, `control_types`, `name_regex`, `value_regex`, `only_visible`, `require_enabled`, `min_width`, `min_height`, `only_focusable`, `automation_id_regex`, `omit_no_name`, `min_separator_count` |
 | `click_index` | `index` |
 | `set_text` | `index`, `text` |
 | `type_text` | `text`, `method` |
-| `find_text` | `text` or `search_text`, `method` |
 | `scroll` | `direction`, `amount` |
 | `tab` | `operation=new|close|next|previous` |
 | `history` | `operation=back|forward|refresh` |

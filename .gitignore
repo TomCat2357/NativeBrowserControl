@@ -8,6 +8,8 @@ digest.txt
 tests/*
 !tests/
 !tests/test_run_native_browser_command.py
+!tests/test_driver_tool_info.py
+!tests/test_run_native_browser_workflow.py
 *.pyc*
 *.ipynb
 *.bak
@@ -15,3 +17,5 @@ native_browser_control.egg-info*
 *test*
 !tests/
 !tests/test_run_native_browser_command.py
+!tests/test_driver_tool_info.py
+!tests/test_run_native_browser_workflow.py

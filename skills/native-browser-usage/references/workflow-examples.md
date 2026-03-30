@@ -82,20 +82,3 @@
   ]
 }
 ```
-
-## HTML ソースを保存
-
-```json
-{
-  "browser": "edge",
-  "connect": {
-    "window_index": 0
-  },
-  "steps": [
-    {
-      "action": "page_source",
-      "save_file": true
-    }
-  ]
-}
-```

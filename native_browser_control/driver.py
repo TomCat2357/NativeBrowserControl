@@ -2116,17 +2116,6 @@ class NativeBrowserDriver:
 
         time.sleep(0.1)
 
-    def find_text_on_page(
-        self, search_text: str, *, method: Literal["paste", "type"] = "paste"
-    ) -> None:
-        """Ctrl+Fでページ内検索を開き、指定方式で入力"""
-        self.ensure_visible(maximize=False, foreground=True, settle_ms=80)
-        self.window.set_focus()
-        send_keys("^f")
-        time.sleep(0.3)
-        self.type_text(search_text, method=method)
-        time.sleep(0.2)
-
     # ========================================
     # タブ操作機能
     # ========================================
@@ -2348,44 +2337,6 @@ class NativeBrowserDriver:
             "rect": rect_payload,
             "descendants": descendants_payload,
         }
-
-    # ========================================
-    # ページソース取得
-    # ========================================
-
-    def get_page_source(
-        self,
-        *,
-        wait_seconds: float = 1.5,
-        close_after: bool = True,
-        save_path: Optional[str] = None,
-    ) -> str:
-        """
-        Ctrl+Uでソースビューを開き、全選択コピーしてHTMLを返す。
-        close_after=Trueならソースビューのタブを閉じて元のタブに戻る。
-        """
-        self._prepare_for_input(maximize=False, foreground=True, settle_ms=80)
-        send_keys("^u")
-        wait_until(
-            lambda: str(self.get_address_bar_url()).startswith("view-source:"),
-            timeout_s=wait_seconds,
-            interval_s=0.1,
-        )
-
-        source = self.select_all_and_get_text()
-
-        if save_path and isinstance(source, str):
-            with open(save_path, "w", encoding="utf-8") as f:
-                f.write(source)
-
-        if close_after:
-            try:
-                self.close_tab()
-            except Exception:
-                pass
-            time.sleep(0.2)
-
-        return source
 
     # ========================================
     # クリップボード操作拡張

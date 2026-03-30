@@ -165,8 +165,6 @@ MCP 設定追加の legacy command は `commands/add-to-config.md` に残して�
 
 - DPI 設定や複数モニタ環境では座標操作がずれることがあります。
 - 要素 index は永続ではありません。ページ更新や再描画で変わるため、毎回 workflow 内で `scan` からやり直します。
-- `get_page_source` は一時的に view-source タブを開きます。
-
 ## ライセンス
 
 MIT
