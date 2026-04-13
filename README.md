@@ -2,14 +2,14 @@
 
 Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium なしで Chrome / Edge を直接操作するプロジェクトです。
 
-現在の推奨導線は、MCP server ではなく repo 同梱 skill `skills/native-browser-usage/` と補助スクリプト `skills/native-browser-usage/scripts/run_native_browser_workflow.py` / `skills/native-browser-usage/scripts/run_native_browser_command.py` を使う方法です。Codex CLI 向け repo skill は `.agents/skills/`、Claude Code 向け project skill / slash command は `.claude/skills/` に同梱しています。`server.py`、`commands/`、`.claude-plugin/` は互換のため残していますが legacy 扱いです。
+推奨導線は repo 同梱 skill `skills/native-browser-usage/` と補助スクリプト `skills/native-browser-usage/scripts/run_native_browser_workflow.py` / `skills/native-browser-usage/scripts/run_native_browser_command.py` を使う方法です。Codex CLI 向け repo skill は `.agents/skills/`、Claude Code 向け project skill / slash command は `.claude/skills/` に同梱しています。
 
 ## 主な機能
 
 - 起動中ブラウザへの接続、または新規起動
 - URL 遷移、URL/タイトル/概要取得
 - ウィンドウスクリーンショット、全画面スクリーンショット
-- ページ全文テキスト取得、HTML ソース取得
+- ページ全文テキスト取得
 - 要素スキャン、フィルタ、index 取得、クリック、テキスト設定
 - テキスト入力、ページ内検索、スクロール
 - タブ、履歴、ズーム、クリップボード、マウス移動
@@ -128,28 +128,6 @@ Codex CLI の slash wrapper（任意）:
 - `.claude/skills/`
 - `codex-prompts/`
 
-## Legacy: MCP server / plugin
-
-互換用として次は残しています。
-
-- `native_browser_control/server.py`
-- `commands/`
-- `.claude-plugin/`
-
-ただし、legacy 経路でも browser は明示指定前提です。`driver_read` / `driver_call` / `driver_tool_info` では browser を省略して暗黙に `chrome` へ落とさないようにしています。既存の slash command も browser を明示して使ってください。
-
-### 直接起動
-
-```powershell
-native-browser-control
-# または
-python -m native_browser_control.server
-```
-
-### add-to-config
-
-MCP 設定追加の legacy command は `commands/add-to-config.md` に残しています。
-
 ## 主なファイル
 
 - `native_browser_control/driver.py`: 実ブラウザ制御の本体
@@ -159,7 +137,6 @@ MCP 設定追加の legacy command は `commands/add-to-config.md` に残して�
 - `.agents/skills/`: Codex CLI の repo skill 入口
 - `.claude/skills/`: Claude Code の project skill / slash command 入口
 - `codex-prompts/`: Codex CLI の `/prompts:` 用テンプレート
-- `native_browser_control/server.py`: legacy MCP server
 
 ## 注意事項
 

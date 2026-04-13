@@ -5,14 +5,6 @@
 - `.\.venv\Scripts\activate`
 - `pip install -e .`
 
-## Run server
-- `native-browser-control`
-- `python -m native_browser_control.core.server`
-
 ## Workflows
-- `python -m native_browser_control.workflows.<path> --help`
-
-## Claude Code plugin (optional)
-- `/plugin marketplace add TomCat2357/NativeBrowserControl`
-- `/plugin install native-browser-control`
-- `/add-to-config`
+- `.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_workflow.py --spec-file .\workflow.json`
+- `.\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py summary --browser chrome --window-index 0`

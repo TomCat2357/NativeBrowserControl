@@ -633,7 +633,7 @@ def _emit_payload(payload: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run NativeBrowserDriver workflows without the MCP server.",
+        description="Run NativeBrowserDriver workflows.",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--spec-json", help="Inline workflow JSON.")
