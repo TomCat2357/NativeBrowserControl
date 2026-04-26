@@ -11,7 +11,11 @@ import base64
 import inspect
 import io
 import json
-from dataclasses import asdict
+import logging
+import os
+import typing
+import uuid
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from mcp.server import Server
@@ -20,17 +24,66 @@ from mcp.types import ImageContent, Resource, TextContent, Tool
 
 from native_browser_control.driver import (
     ActionResult,
+    BROWSER_CONFIG,
+    BrowserWindowInfo,
     NativeBrowserDriver,
     NativeBrowserError,
     NativeChromeDriver,
     NativeEdgeDriver,
-    BROWSER_CONFIG,
+    connect_browser_by_index,
+    launch_browser_driver,
+    list_running_browser_drivers,
 )
+from native_browser_control.schema_gen import (
+    iter_driver_methods,
+    signature_to_input_schema,
+)
+
+logger = logging.getLogger(__name__)
 
 __version__ = "0.2.0"
 
 _sessions: dict[str, NativeBrowserDriver] = {}
 _active_session_by_browser: dict[str, str] = {}
+
+
+DRIVER_TOOL_PREFIX = "driver_"
+
+RESERVED_TOOL_NAMES: set[str] = {
+    "driver_call",
+    "driver_read",
+    "driver_tool_info",
+    "launch_chrome",
+    "launch_edge",
+    "list_running_browsers",
+    "connect_browser",
+}
+
+RESERVED_DRIVER_METHODS: set[str] = {
+    "tool_info",
+    "get_browser_window",
+    "connect",
+}
+
+COMMON_INJECT: dict[str, dict[str, Any]] = {
+    "session_id": {
+        "type": "string",
+        "description": "対象セッションID。省略時は browser から active セッションを解決します。",
+    },
+    "browser": {
+        "type": "string",
+        "enum": ["chrome", "edge"],
+        "description": "session_id 省略時に必須。",
+    },
+}
+
+
+@dataclass(frozen=True)
+class DynamicToolSpec:
+    tool_name: str
+    method_name: str
+    schema: dict[str, Any]
+    description: str
 
 
 def _driver_class_for_browser(browser: str) -> type[NativeBrowserDriver]:
@@ -274,6 +327,104 @@ def _resolve_session(
     return sid, driver
 
 
+def _register_session(driver: NativeBrowserDriver, *, session_id: str | None = None) -> str:
+    """ドライバーを _sessions に登録し session_id を返す。"""
+    sid = (session_id or "").strip()
+    if not sid:
+        sid = f"{driver.browser}:{uuid.uuid4().hex[:8]}"
+    _sessions[sid] = driver
+    _active_session_by_browser[driver.browser] = sid
+    return sid
+
+
+def _build_dynamic_tools() -> dict[str, DynamicToolSpec]:
+    """NativeBrowserDriver の公開メソッドを走査して MCP ツール定義を生成する。
+
+    環境変数 ``NATIVE_BROWSER_MCP_DYNAMIC=0`` で無効化できる kill switch を備える。
+    """
+    if os.environ.get("NATIVE_BROWSER_MCP_DYNAMIC", "1") == "0":
+        logger.info("dynamic tool registration disabled via NATIVE_BROWSER_MCP_DYNAMIC=0")
+        return {}
+
+    out: dict[str, DynamicToolSpec] = {}
+    for name, member in iter_driver_methods(NativeBrowserDriver):
+        if name in RESERVED_DRIVER_METHODS:
+            continue
+        tool_name = f"{DRIVER_TOOL_PREFIX}{name}"
+        if tool_name in RESERVED_TOOL_NAMES:
+            continue
+        try:
+            sig = inspect.signature(member)
+        except (TypeError, ValueError) as exc:
+            logger.debug("skip %s: signature unavailable (%s)", name, exc)
+            continue
+        try:
+            type_hints = typing.get_type_hints(member)
+        except Exception as exc:
+            logger.debug("skip type hints for %s (%s)", name, exc)
+            type_hints = {}
+        schema = signature_to_input_schema(
+            sig,
+            type_hints=type_hints,
+            inject=COMMON_INJECT,
+            inject_required=[],
+            drop_params={"self"},
+        )
+        doc = (inspect.getdoc(member) or "").strip()
+        summary = doc.splitlines()[0] if doc else f"NativeBrowserDriver.{name}"
+        out[tool_name] = DynamicToolSpec(
+            tool_name=tool_name,
+            method_name=name,
+            schema=schema,
+            description=summary,
+        )
+    return out
+
+
+_DYNAMIC_TOOLS: dict[str, DynamicToolSpec] = _build_dynamic_tools()
+
+
+LAUNCH_SCHEMA = build_schema(
+    properties={
+        "retries": {"type": "integer", "default": 5, "minimum": 1},
+        "start_delay": {"type": "number", "default": 1.0, "minimum": 0},
+        "session_id": {
+            "type": "string",
+            "description": "省略時は自動採番 ({browser}:{8桁hex})。",
+        },
+    },
+)
+
+LIST_RUNNING_SCHEMA = build_schema(
+    properties={
+        "browser": {
+            "type": "string",
+            "enum": ["chrome", "edge"],
+            "description": "省略時は chrome と edge の両方を列挙。",
+        },
+        "require_visible": {"type": "boolean", "default": False},
+        "exclude_minimized": {"type": "boolean", "default": False},
+        "retries": {"type": "integer", "default": 1, "minimum": 1},
+    },
+)
+
+CONNECT_SCHEMA = build_schema(
+    properties={
+        "browser": {"type": "string", "enum": ["chrome", "edge"]},
+        "window_index": {
+            "type": "integer",
+            "default": 0,
+            "description": "Pythonスタイルのインデックス。-1 で最後のウィンドウ。",
+        },
+        "require_visible": {"type": "boolean", "default": False},
+        "exclude_minimized": {"type": "boolean", "default": False},
+        "retries": {"type": "integer", "default": 3, "minimum": 1},
+        "session_id": {"type": "string"},
+    },
+    required=["browser"],
+)
+
+
 server = Server("native-browser-control")
 
 RESOURCES = {
@@ -321,7 +472,7 @@ async def list_tools() -> list[Tool]:
         "session_id": {"type": "string"},
     }
 
-    return [
+    legacy_tools: list[Tool] = [
         Tool(
             name="driver_read",
             description="driverメンバー情報を返します。session_idがあればそのセッションを参照します。",
@@ -356,6 +507,40 @@ async def list_tools() -> list[Tool]:
             inputSchema=build_schema(properties={**common_props}),
         ),
     ]
+
+    launcher_tools: list[Tool] = [
+        Tool(
+            name="launch_chrome",
+            description="Chrome を新規起動して NativeBrowserDriver セッションを作成し session_id を返します。",
+            inputSchema=LAUNCH_SCHEMA,
+        ),
+        Tool(
+            name="launch_edge",
+            description="Edge を新規起動して NativeBrowserDriver セッションを作成し session_id を返します。",
+            inputSchema=LAUNCH_SCHEMA,
+        ),
+        Tool(
+            name="list_running_browsers",
+            description="起動中の Chrome/Edge ウィンドウ一覧を返します (pid/title/handle/visible/minimized/foreground)。",
+            inputSchema=LIST_RUNNING_SCHEMA,
+        ),
+        Tool(
+            name="connect_browser",
+            description="既存ブラウザウィンドウに window_index 指定で接続し session_id を返します。",
+            inputSchema=CONNECT_SCHEMA,
+        ),
+    ]
+
+    dynamic_tools: list[Tool] = [
+        Tool(
+            name=spec.tool_name,
+            description=spec.description,
+            inputSchema=spec.schema,
+        )
+        for spec in sorted(_DYNAMIC_TOOLS.values(), key=lambda s: s.tool_name)
+    ]
+
+    return legacy_tools + launcher_tools + dynamic_tools
 
 
 def _result_to_contents(result: Any, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
@@ -398,6 +583,140 @@ def _result_to_contents(result: Any, arguments: dict[str, Any]) -> list[TextCont
         return [TextContent(type="text", text="ok")]
 
     return [TextContent(type="text", text=str(result))]
+
+
+def _window_info_to_dict(info: BrowserWindowInfo) -> dict[str, Any]:
+    """``BrowserWindowInfo`` を JSON 化可能な dict に変換する。
+
+    ``Rect`` は ``width`` / ``height`` の property を含めて返す。
+    """
+    rect = info.rect
+    return {
+        "browser": info.browser,
+        "title": info.title,
+        "pid": info.pid,
+        "handle": info.handle,
+        "rect": {
+            "left": rect.left,
+            "top": rect.top,
+            "right": rect.right,
+            "bottom": rect.bottom,
+            "width": rect.width,
+            "height": rect.height,
+        },
+        "is_visible": info.is_visible,
+        "is_minimized": info.is_minimized,
+        "is_foreground": info.is_foreground,
+    }
+
+
+async def _handle_launch(tool_name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    browser = "chrome" if tool_name == "launch_chrome" else "edge"
+    retries = int(arguments.get("retries", 5))
+    start_delay = float(arguments.get("start_delay", 1.0))
+    requested_session_id = arguments.get("session_id")
+
+    driver = await asyncio.to_thread(
+        launch_browser_driver,
+        browser=browser,
+        retries=retries,
+        start_delay=start_delay,
+    )
+    sid = _register_session(driver, session_id=requested_session_id)
+
+    payload: dict[str, Any] = {
+        "ok": True,
+        "session_id": sid,
+        "browser": browser,
+    }
+    window = getattr(driver, "window", None)
+    if window is not None:
+        try:
+            payload["window"] = _window_to_payload(window)
+        except Exception as exc:
+            logger.debug("launch: window payload skipped (%s)", exc)
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+
+def _handle_list_running_browsers(arguments: dict[str, Any]) -> list[TextContent]:
+    raw_browser = arguments.get("browser")
+    browser: str | None = None
+    if raw_browser not in (None, ""):
+        browser = _normalize_browser(raw_browser)
+
+    require_visible = bool(arguments.get("require_visible", False))
+    exclude_minimized = bool(arguments.get("exclude_minimized", False))
+    retries = int(arguments.get("retries", 1))
+
+    infos = list_running_browser_drivers(
+        browser,
+        require_visible=require_visible,
+        exclude_minimized=exclude_minimized,
+        retries=retries,
+    )
+    payload = {
+        "ok": True,
+        "count": len(infos),
+        "windows": [_window_info_to_dict(i) for i in infos],
+    }
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+
+async def _handle_connect_browser(arguments: dict[str, Any]) -> list[TextContent]:
+    browser = _normalize_browser(arguments.get("browser"))
+    window_index = int(arguments.get("window_index", 0))
+    require_visible = bool(arguments.get("require_visible", False))
+    exclude_minimized = bool(arguments.get("exclude_minimized", False))
+    retries = int(arguments.get("retries", 3))
+    requested_session_id = arguments.get("session_id")
+
+    driver = await asyncio.to_thread(
+        connect_browser_by_index,
+        browser=browser,
+        window_index=window_index,
+        require_visible=require_visible,
+        exclude_minimized=exclude_minimized,
+        retries=retries,
+    )
+    sid = _register_session(driver, session_id=requested_session_id)
+
+    payload: dict[str, Any] = {
+        "ok": True,
+        "session_id": sid,
+        "browser": browser,
+        "window_index": window_index,
+    }
+    window = getattr(driver, "window", None)
+    if window is not None:
+        try:
+            payload["window"] = _window_to_payload(window)
+        except Exception as exc:
+            logger.debug("connect_browser: window payload skipped (%s)", exc)
+    return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+
+async def _handle_dynamic_tool(
+    spec: DynamicToolSpec, arguments: dict[str, Any]
+) -> list[TextContent | ImageContent]:
+    args = dict(arguments or {})
+    session_id = str(args.pop("session_id", "")).strip() or None
+    raw_browser = args.pop("browser", None)
+    browser = _normalize_browser(raw_browser) if raw_browser not in (None, "") else None
+
+    sid, driver = _resolve_session(session_id, browser)
+
+    method = getattr(driver, spec.method_name, None)
+    if method is None or not callable(method):
+        raise AttributeError(f"unknown driver method: {spec.method_name}")
+
+    try:
+        bound = inspect.signature(method).bind_partial(**args)
+    except TypeError as exc:
+        raise ValueError(f"{spec.tool_name}: {exc}") from exc
+
+    result = await asyncio.to_thread(method, **bound.arguments)
+    _active_session_by_browser[driver.browser] = sid
+    return _result_to_contents(result, args)
 
 
 @server.call_tool()
@@ -467,6 +786,17 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | 
             result = _invoke_member(driver, method=method, args=args, kwargs=kwargs)
             _active_session_by_browser[driver.browser] = sid
             return _result_to_contents(result, kwargs)
+
+        if name in {"launch_chrome", "launch_edge"}:
+            return await _handle_launch(name, arguments)
+        if name == "list_running_browsers":
+            return _handle_list_running_browsers(arguments)
+        if name == "connect_browser":
+            return await _handle_connect_browser(arguments)
+
+        spec = _DYNAMIC_TOOLS.get(name)
+        if spec is not None:
+            return await _handle_dynamic_tool(spec, arguments)
 
         return _error_text("unknown_tool", f"call_tool: unknown tool '{name}'")
     except Exception as e:

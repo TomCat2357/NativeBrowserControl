@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "native-browser-control": {
+      "command": "uvx",
+      "args": [
+        "--python", "3.11",
+        "--from", "git+https://github.com/TomCat2357/NativeBrowserControl",
+        "native-browser-control"
+      ]
+    }
+  }
+}

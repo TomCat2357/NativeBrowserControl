@@ -15,8 +15,8 @@
         "source": "github",
         "repo": "TomCat2357/NativeBrowserControl"
       },
-      "description": "Windows UI Automation経由でChrome/Edgeを制御するNativeBrowserControl MCPサーバーの操作を補助するプラグイン",
-      "version": "0.1.0",
+      "description": "Chrome/EdgeをWindows UI Automation経由で制御するMCPサーバー込みプラグイン。launch_chrome / launch_edge / list_running_browsers / connect_browser に加え、NativeBrowserDriver の公開メソッド (50+) を driver_<method> として動的公開。",
+      "version": "0.2.0",
       "author": {
         "name": "TomCat2357",
         "email": "user@example.com"

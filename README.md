@@ -2,7 +2,13 @@
 
 Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium なしで Chrome / Edge を直接操作するプロジェクトです。
 
-現在の推奨導線は、MCP server ではなく repo 同梱 skill `skills/native-browser-usage/` と補助スクリプト `skills/native-browser-usage/scripts/run_native_browser_workflow.py` / `skills/native-browser-usage/scripts/run_native_browser_command.py` を使う方法です。Codex CLI 向け repo skill は `.agents/skills/`、Claude Code 向け project skill / slash command は `.claude/skills/` に同梱しています。`server.py`、`commands/`、`.claude-plugin/` は互換のため残していますが legacy 扱いです。
+利用導線は 3 系統あります。
+
+- **MCP サーバー (Claude Code 向け、推奨)**: `.claude-plugin/` を `/plugin install` するだけで `launch_chrome` / `launch_edge` / `list_running_browsers` / `connect_browser` と `driver_<method>` (50+) の MCP ツールが使えます。詳細は [プラグインとしての導入](#プラグインとしての導入-claude-code) と [MCP サーバーの使い方](#mcp-サーバーの使い方) を参照。
+- **スキル (Codex CLI / Claude Code project skill)**: `.agents/skills/native-browser-*/` (Codex) と `.claude/skills/native-browser-*/` (Claude Code project skill) を同梱しています。
+- **直接スクリプト実行 (CI / バッチ)**: `skills/native-browser-usage/scripts/run_native_browser_workflow.py` または `run_native_browser_command.py` を直接呼び出します。
+
+`server.py` の旧 3 ツール (`driver_call` / `driver_read` / `driver_tool_info`) は互換のため残していますが、新規利用は個別 MCP ツール (`driver_<method>`) を推奨します。
 
 ## 主な機能
 
@@ -28,6 +34,146 @@ python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e .
 ```
+
+## プラグインとしての導入 (Claude Code)
+
+Claude Code から MCP ツールを使うには `/plugin install` で本リポジトリのプラグインを取り込みます。3 通りのインストール経路があります。
+
+### 1. マーケットプレイス経由 (推奨)
+
+```text
+/plugin marketplace add TomCat2357/NativeBrowserControl
+/plugin install native-browser-control@native-browser-control-tools
+```
+
+Claude Code がリポジトリを取得し、`.claude-plugin/.mcp.json` の定義に従って `uvx` で MCP サーバーを起動します。
+
+### 2. ローカル marketplace.json から
+
+ローカルにクローンしたリポジトリをそのまま使う場合:
+
+```text
+/plugin marketplace add file:///<repo absolute path>/.claude-plugin/marketplace.json
+/plugin install native-browser-control
+```
+
+### 3. `.claude.json` に直接登録 (プラグインを使わない場合)
+
+`commands/add-to-config.md` の例に従い、ユーザーの `.claude.json` の `mcpServers` に以下を追記します。
+
+```json
+{
+  "native-browser-control": {
+    "command": "uvx",
+    "args": [
+      "--python", "3.11",
+      "--from", "git+https://github.com/TomCat2357/NativeBrowserControl",
+      "native-browser-control"
+    ]
+  }
+}
+```
+
+### 前提
+
+- `uv` (および `uvx`) がインストール済み。未導入の場合は `pip install uv` か公式インストーラ
+- `uv python install 3.11` で Python 3.11 を確保 (`pyproject.toml` が `>=3.11,<3.12` を要求)
+- Windows 環境 (pywin32 / pywinauto 依存)
+
+### インストール後の確認
+
+```bash
+claude mcp list   # native-browser-control が表示されること
+```
+
+Claude Code 内のツール補完で `mcp__native-browser-control__` を打つと、launch 系・list 系・`driver_*` 50+ が候補に出ます。
+
+## MCP サーバーの使い方
+
+### 公開ツールの全体像
+
+| 種別 | ツール | 役割 |
+|---|---|---|
+| 起動系 | `launch_chrome` / `launch_edge` | 新規ウィンドウを起動して `session_id` を返す |
+| 起動系 | `list_running_browsers` | 起動中の Chrome/Edge ウィンドウ一覧を返す (`pid` / `title` / `handle` / `rect` / `is_visible` / `is_minimized` / `is_foreground`) |
+| 起動系 | `connect_browser` | 既存ウィンドウに `window_index` 指定で接続して `session_id` を返す |
+| 動的 | `driver_<method_name>` | NativeBrowserDriver の公開メソッド (約 50 個) を 1 メソッド = 1 ツールとして動的公開 |
+| レガシー | `driver_call` / `driver_read` / `driver_tool_info` | 互換のため残置されたリフレクション型 API |
+
+### 典型的なフロー
+
+1. ブラウザを立ち上げてセッションを取得
+   ```json
+   { "tool": "mcp__native-browser-control__launch_chrome", "args": {} }
+   ```
+   → `{"ok": true, "session_id": "chrome:abcd1234", "browser": "chrome", ...}`
+
+2. URL に遷移
+   ```json
+   { "tool": "mcp__native-browser-control__driver_navigate",
+     "args": { "session_id": "chrome:abcd1234", "url": "https://example.com" } }
+   ```
+
+3. ページ要素をスキャン
+   ```json
+   { "tool": "mcp__native-browser-control__driver_scan_page_elements",
+     "args": { "session_id": "chrome:abcd1234",
+                "control_type": "Button", "only_visible": true } }
+   ```
+
+4. インデックスでクリック
+   ```json
+   { "tool": "mcp__native-browser-control__driver_click_by_index",
+     "args": { "session_id": "chrome:abcd1234", "index": 3 } }
+   ```
+
+### `session_id` と `browser` パラメータ
+
+- すべての動的ツール (`driver_*`) は `session_id` (任意) と `browser` (任意) を受け付けます。
+- `session_id` を指定するとそのセッション (= 接続済みウィンドウ) を直接利用します。
+- `session_id` を省略した場合、`browser` (`chrome` または `edge`) のアクティブセッションを解決します。
+- どちらも省略するとエラーになります。
+
+### 既存ウィンドウへの再接続
+
+```json
+{ "tool": "mcp__native-browser-control__list_running_browsers",
+  "args": { "browser": "edge" } }
+```
+→ 一覧から目的のウィンドウの `index` を確認し、
+
+```json
+{ "tool": "mcp__native-browser-control__connect_browser",
+  "args": { "browser": "edge", "window_index": 0 } }
+```
+→ `session_id` を取得して以降は `driver_*` を呼び出します。
+
+### レガシー API との互換
+
+既存の `driver_call(method=..., args=..., kwargs=...)` 呼び出しは引き続き動作します。`driver_tool_info` を呼べば、ドライバーの全公開メソッドのシグネチャと docstring を 1 度に取得できます (個別 MCP ツールにメソッドが見当たらないときの確認用)。
+
+### 動的ツール登録の無効化
+
+ツール数が多すぎる、あるいは LLM のコンテキスト消費を抑えたい場合は環境変数で動的登録を切れます (起動系 4 ツールとレガシー 3 ツールは残ります)。
+
+```bash
+NATIVE_BROWSER_MCP_DYNAMIC=0 uvx ... native-browser-control
+```
+
+## スキルと MCP サーバーの使い分け
+
+| ユースケース | 推奨経路 |
+|---|---|
+| Claude Code から自然言語で対話的に操作 | **MCP サーバー** (`/plugin install` 後、ツール補完が効く) |
+| Codex CLI から呼ぶ | **`.agents/skills/native-browser-*/`** (slash command 形式) |
+| Claude Code でも slash command を使いたい | **`.claude/skills/native-browser-*/`** (project skill) |
+| バッチで決まった workflow を実行 | **`run_native_browser_workflow.py` + JSON 仕様** (CI / 定期ジョブ向け) |
+| ドライバー API を直接叩く | **Python から `import native_browser_control`** |
+
+補足:
+
+- MCP サーバーとスキル/直接スクリプトは互いに干渉しません。同じ NativeBrowserDriver を裏で使う 3 系統の入口です。
+- セッション分離: MCP サーバー経由のセッションとスクリプト直接実行のセッションは別プロセスのため共有されません。
 
 ## 推奨: skill + direct driver workflow
 
