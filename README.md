@@ -5,6 +5,7 @@ Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium な�
 利用導線は 3 系統あります。
 
 - **MCP サーバー (Claude Code 向け、推奨)**: `.claude-plugin/` を `/plugin install` するだけで `launch_chrome` / `launch_edge` / `list_running_browsers` / `connect_browser` と `driver_<method>` (50+) の MCP ツールが使えます。詳細は [プラグインとしての導入](#プラグインとしての導入-claude-code) と [MCP サーバーの使い方](#mcp-サーバーの使い方) を参照。
+- **Codex / ChatGPT プラグイン**: `.codex-plugin/plugin.json` をエントリポイントとして、`skills/` の workflow skill と `.mcp.json` の MCP サーバー設定を一つのプラグインとして同梱しています。
 - **スキル (Codex CLI / Claude Code project skill)**: `.agents/skills/native-browser-*/` (Codex) と `.claude/skills/native-browser-*/` (Claude Code project skill) を同梱しています。
 - **直接スクリプト実行 (CI / バッチ)**: `skills/native-browser-usage/scripts/run_native_browser_workflow.py` または `run_native_browser_command.py` を直接呼び出します。
 
@@ -24,7 +25,7 @@ Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium な�
 
 - Windows 環境
 - Chrome または Edge がインストール済み
-- Python 3.11.9
+- Python 3.11 以上
 - UI Automation の性質上、ブラウザを前面化して操作するため手動操作と競合する
 
 ## セットアップ
@@ -34,6 +35,20 @@ python -m venv .venv
 .\.venv\Scripts\activate
 pip install -e .
 ```
+
+## プラグインとしての導入 (Codex / ChatGPT)
+
+このリポジトリは、Codex / ChatGPT の共通プラグイン構成にも対応しています。OpenAIのプラグインはskill、MCPサーバー、またはその両方を同梱できるため、本プロジェクトでは次の構成にしています。
+
+- `.codex-plugin/plugin.json`: プラグインマニフェスト
+- `skills/`: `native-browser-usage` と、summary / navigate / scan / click / set-text / screenshot の操作別skill
+- `.mcp.json`: `native-browser-control` MCPサーバーの接続定義
+
+ローカルで試す場合は、Codexのローカルマーケットプレイスへこのリポジトリを登録して `native-browser-control` をインストールし、反映後に新しい会話で `$native-browser-usage` または操作別skillを呼び出してください。Windows環境では `uv`、Python 3.11以上、ChromeまたはEdgeが必要です。ChatGPT側でMCPを利用する場合は、利用環境のローカル／公開MCP接続設定と認証ポリシーに従って登録してください。
+
+MCPサーバーの取得元は、プラグインの`0.2.0`実装と一致するGitコミットに固定しています。MCP実装を更新して公開する場合は、`.mcp.json`のSHAとプラグインバージョンを同時に更新してください。
+
+このリポジトリは既存のユーザー設定や個人マーケットプレイスを自動変更しません。マーケットプレイス登録は利用環境のポリシーに合わせて行ってください。
 
 ## プラグインとしての導入 (Claude Code)
 
@@ -299,7 +314,10 @@ MCP 設定追加の legacy command は `commands/add-to-config.md` に残して�
 ## 主なファイル
 
 - `native_browser_control/driver.py`: 実ブラウザ制御の本体
+- `.codex-plugin/plugin.json`: Codex / ChatGPT プラグインマニフェスト
+- `.mcp.json`: Codex / ChatGPT 用 MCP サーバー定義
 - `skills/native-browser-usage/`: 推奨 skill
+- `skills/native-browser-{summary,navigate,scan,click,set-text,screenshot}/`: 操作別 skill
 - `skills/native-browser-usage/scripts/run_native_browser_workflow.py`: direct driver 実行入口
 - `skills/native-browser-usage/scripts/run_native_browser_command.py`: agent 向けコア操作ラッパー
 - `.agents/skills/`: Codex CLI の repo skill 入口

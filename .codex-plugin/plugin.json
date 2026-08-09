@@ -1,0 +1,40 @@
+{
+  "name": "native-browser-control",
+  "version": "0.2.0",
+  "description": "Chrome と Edge を Windows UI Automation 経由で操作する Codex プラグイン。",
+  "author": {
+    "name": "TomCat2357",
+    "email": "user@example.com",
+    "url": "https://github.com/TomCat2357"
+  },
+  "homepage": "https://github.com/TomCat2357/NativeBrowserControl",
+  "repository": "https://github.com/TomCat2357/NativeBrowserControl",
+  "license": "MIT",
+  "keywords": [
+    "browser",
+    "automation",
+    "chrome",
+    "edge",
+    "ui-automation",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Native Browser Control",
+    "shortDescription": "Chrome と Edge を Windows UI Automation で操作",
+    "longDescription": "Selenium を使わず、NativeBrowserDriver と MCP サーバーを通じて Windows 上の Chrome と Edge を操作します。ブラウザ選択を明示した安全なスキャン、クリック、テキスト入力、ナビゲーション、スクリーンショットに対応します。",
+    "developerName": "TomCat2357",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Browser Automation"
+    ],
+    "defaultPrompt": [
+      "Use $native-browser-usage to control Chrome or Edge with an explicit browser choice.",
+      "Scan the current Chrome or Edge window and report interactive elements.",
+      "Navigate a browser tab and capture a screenshot."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

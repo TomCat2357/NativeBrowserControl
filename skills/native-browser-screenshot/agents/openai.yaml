@@ -1,0 +1,10 @@
+interface:
+  display_name: "Native Browser Screenshot"
+  short_description: "Capture Chrome or Edge screenshots through MCP"
+  default_prompt: "Use the NativeBrowserControl MCP tools to capture a Chrome or Edge screenshot."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "native-browser-control"
+      description: "NativeBrowserControl MCP server"

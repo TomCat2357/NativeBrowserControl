@@ -1,0 +1,10 @@
+interface:
+  display_name: "Native Browser Set Text"
+  short_description: "Set Chrome or Edge text through MCP"
+  default_prompt: "Use the NativeBrowserControl MCP tools to set text in a Chrome or Edge field."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "native-browser-control"
+      description: "NativeBrowserControl MCP server"

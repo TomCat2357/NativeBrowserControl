@@ -1,0 +1,10 @@
+interface:
+  display_name: "Native Browser Click"
+  short_description: "Click a Chrome or Edge element through MCP"
+  default_prompt: "Use the NativeBrowserControl MCP tools to click a selected Chrome or Edge element."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "native-browser-control"
+      description: "NativeBrowserControl MCP server"
