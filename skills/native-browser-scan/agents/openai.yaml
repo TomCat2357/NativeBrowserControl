@@ -1,10 +1,4 @@
 interface:
   display_name: "Native Browser Scan"
-  short_description: "Scan Chrome or Edge elements through MCP"
-  default_prompt: "Use the NativeBrowserControl MCP tools to scan interactive Chrome or Edge elements."
-
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "native-browser-control"
-      description: "NativeBrowserControl MCP server"
+  short_description: "Scan Chrome or Edge elements with the direct runner"
+  default_prompt: "Use the bundled direct runner to scan interactive Chrome or Edge elements."

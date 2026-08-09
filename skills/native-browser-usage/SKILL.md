@@ -1,17 +1,12 @@
 ---
 name: native-browser-usage
-description: Control Chrome and Edge on Windows through this plugin's MCP server, or use the bundled direct runner when working from a repository checkout. Use for navigation, screenshots, page text, element scanning, clicking, text input, scrolling, tabs, history, zoom, clipboard, or mouse movement.
+description: Control Chrome and Edge on Windows with the bundled direct runner without requiring an MCP server. Use for navigation, screenshots, page text, element scanning, clicking, text input, scrolling, tabs, history, zoom, clipboard, or mouse movement.
 ---
 
 # NativeBrowserDriver Workflow
 
-このskillは、インストール済みCodex / ChatGPTプラグインでは、同梱MCPサーバーのツールを使う。対象セッションを
-`mcp__native-browser-control__launch_chrome`、`mcp__native-browser-control__launch_edge`、
-または `mcp__native-browser-control__connect_browser` で作成・選択してから、操作別skillに従って
-`mcp__native-browser-control__driver_*` ツールを呼び出す。
-
-リポジトリを直接checkoutして使う場合だけ、以下の「直接runner」手順で
-`skills/native-browser-usage/scripts/` を呼び出す。インストール済みプラグインで、ユーザーの現在の作業ディレクトリからこの相対パスを解決してはいけない。
+このskillはMCP serverや追加のtoolを必要とせず、同梱スクリプトから
+`native_browser_control.driver` を直接呼び出す。CodexでMCPが利用できない場合も同じ手順を使う。
 
 ## 実行ルール
 
@@ -20,7 +15,15 @@ description: Control Chrome and Edge on Windows through this plugin's MCP server
 - 要素 index を使う操作は、同じ workflow invocation の中で `scan` を先に実行してから続ける。
 - `connect` は `window_index` または `launch: true` のどちらかを指定する。
 
-## 直接runner（リポジトリcheckout時のみ）
+## 直接runner
+
+インストール済みプラグインから実行する場合は、skillファイルが置かれている
+プラグインのルートから `scripts/run_native_browser_*.py` の絶対パスを解決して
+実行する。ユーザーのcwdから `skills/...` を推測しない。リポジトリcheckoutで
+実行する場合だけ、以下の相対パス例を使う。
+
+依存不足時はエラーJSONの `project_root` と `recommended_runner` を使い、
+`uv run --project <project_root> python <absolute-runner-path> ...` で再実行する。
 
 PowerShell 例:
 
@@ -41,7 +44,7 @@ Agent 向けコマンドラッパー例:
 .\.venv\Scripts\python.exe .\skills\native-browser-usage\scripts\run_native_browser_command.py click --browser edge --name-regex "^(検索|Search)$" --control-type Button --only-visible
 ```
 
-`run_native_browser_command.py` の主な subcommand は `summary` / `navigate` / `scan` / `click` / `set-text` / `screenshot`。
+`run_native_browser_command.py` の主な subcommand は `connect` / `summary` / `navigate` / `scan` / `click` / `set-text` / `screenshot`。
 
 ## 運用手順
 
@@ -61,4 +64,5 @@ Agent 向けコマンドラッパー例:
 
 - `summary` はブラウザ概要取得用。index ベースの操作前提 state は `scan` で作る。
 - `screenshot` と `full_screenshot` は既定で画像を一時ディレクトリへ保存し、絶対パスを返す。
-- legacy の MCP server / plugin / `commands/` は互換のため残っている。インストール済みプラグインでは同梱MCPツールを優先し、直接runnerはリポジトリcheckout時だけ使う。
+- `connect` は接続後にsummaryを返す単発コマンドで、MCPのようなプロセス間セッション共有は行わない。
+- legacy の MCP server / plugin / `commands/` は対応クライアント向けに残しているが、このskillでは使わない。

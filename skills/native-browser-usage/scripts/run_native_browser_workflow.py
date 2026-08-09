@@ -15,14 +15,31 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from native_browser_control.driver import (  # noqa: E402
-    ActionResult,
-    BROWSER_CONFIG,
-    NativeBrowserDriver,
-    NativeBrowserError,
-    connect_browser_by_index,
-    launch_browser_driver,
-)
+_DRIVER_IMPORT_ERROR: ModuleNotFoundError | None = None
+try:
+    from native_browser_control.driver import (  # noqa: E402
+        ActionResult,
+        BROWSER_CONFIG,
+        NativeBrowserDriver,
+        NativeBrowserError,
+        connect_browser_by_index,
+        launch_browser_driver,
+    )
+except ModuleNotFoundError as exc:  # pragma: no cover - exercised in a dependency-less subprocess
+    # Keep the CLI importable so it can report a useful, machine-readable error when
+    # the selected Python environment has not been provisioned yet (for example,
+    # Pillow is missing from a partially repaired .venv).
+    _DRIVER_IMPORT_ERROR = exc
+    ActionResult = Any  # type: ignore[misc,assignment]
+    BROWSER_CONFIG = {}
+    NativeBrowserDriver = Any  # type: ignore[misc,assignment]
+
+    class NativeBrowserError(RuntimeError):
+        code = "dependency_missing"
+        data: dict[str, Any] = {}
+
+    connect_browser_by_index = None  # type: ignore[assignment]
+    launch_browser_driver = None  # type: ignore[assignment]
 
 logging.getLogger().setLevel(logging.WARNING)
 logging.getLogger("native_browser_control.driver").setLevel(logging.WARNING)
@@ -40,6 +57,29 @@ def _error_payload(code: str, message: str, data: Any | None = None) -> dict[str
     if data is not None:
         payload["error"]["data"] = data
     return payload
+
+
+def _ensure_runtime_dependencies() -> None:
+    if _DRIVER_IMPORT_ERROR is None:
+        return
+
+    missing_module = getattr(_DRIVER_IMPORT_ERROR, "name", None)
+    detail = str(_DRIVER_IMPORT_ERROR)
+    raise WorkflowError(
+        "dependency_missing",
+        "NativeBrowserControl dependencies are unavailable in the selected Python environment.",
+        {
+            "python_executable": sys.executable,
+            "missing_module": missing_module,
+            "import_error": detail,
+            "project_root": str(REPO_ROOT),
+            "repair": [
+                f'uv sync --project "{REPO_ROOT}"',
+                f'uv run --project "{REPO_ROOT}" python "{Path(__file__).resolve()}"',
+            ],
+            "recommended_runner": f'uv run --project "{REPO_ROOT}" python "{Path(__file__).resolve()}"',
+        },
+    )
 
 
 def _normalize_browser(value: Any) -> str:
@@ -192,6 +232,7 @@ def _connect_driver(browser: str, connect_spec: dict[str, Any]) -> NativeBrowser
             "'connect.window_index' and 'connect.launch' cannot be used together.",
         )
     if launch:
+        assert launch_browser_driver is not None
         return launch_browser_driver(
             browser=browser,
             retries=retries,
@@ -202,6 +243,7 @@ def _connect_driver(browser: str, connect_spec: dict[str, Any]) -> NativeBrowser
             ),
         )
     if has_window_index:
+        assert connect_browser_by_index is not None
         return connect_browser_by_index(
             browser=browser,
             window_index=_coerce_int(
@@ -589,6 +631,7 @@ def _load_spec_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run_workflow(spec: dict[str, Any]) -> dict[str, Any]:
+    _ensure_runtime_dependencies()
     browser = _normalize_browser(spec.get("browser"))
     connect_spec = _require_dict(spec.get("connect"), "connect")
     steps = _require_list(spec.get("steps"), "steps")

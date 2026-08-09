@@ -20,6 +20,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RunWorkflowTests(unittest.TestCase):
+    def test_missing_runtime_dependency_returns_actionable_error(self):
+        missing = ModuleNotFoundError("No module named 'PIL'")
+        missing.name = "PIL"
+
+        with patch.object(MODULE, "_DRIVER_IMPORT_ERROR", missing):
+            with self.assertRaises(MODULE.WorkflowError) as ctx:
+                MODULE.run_workflow({})
+
+        self.assertEqual(ctx.exception.code, "dependency_missing")
+        self.assertEqual(ctx.exception.data["missing_module"], "PIL")
+        self.assertTrue(all("NativeBrowserControl" in item for item in ctx.exception.data["repair"]))
+        self.assertIn("uv run --project", ctx.exception.data["recommended_runner"])
+
     def test_page_source_action_is_rejected_as_unsupported(self):
         spec = {
             "browser": "chrome",

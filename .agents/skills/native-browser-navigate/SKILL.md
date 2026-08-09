@@ -6,6 +6,7 @@ description: Navigate a live Chrome or Edge tab with this repository's NativeBro
 # Native Browser Navigate
 
 Use `skills/native-browser-usage/scripts/run_native_browser_command.py navigate`.
+Resolve the runner from the repository root; do not resolve this path from an unrelated cwd.
 
 Interpret inline `key=value` arguments near the skill mention. Example:
 

@@ -1,10 +1,4 @@
 interface:
   display_name: "Native Browser Summary"
-  short_description: "Read Chrome or Edge state through MCP"
-  default_prompt: "Use the NativeBrowserControl MCP tools to summarize the current Chrome or Edge window."
-
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "native-browser-control"
-      description: "NativeBrowserControl MCP server"
+  short_description: "Read Chrome or Edge state with the direct runner"
+  default_prompt: "Use the bundled direct runner to summarize the current Chrome or Edge window."

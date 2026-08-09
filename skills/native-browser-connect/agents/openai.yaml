@@ -1,0 +1,4 @@
+interface:
+  display_name: "Native Browser Connect"
+  short_description: "Connect to Chrome or Edge with the direct runner"
+  default_prompt: "Use the bundled direct runner to connect to or launch a Chrome or Edge window."

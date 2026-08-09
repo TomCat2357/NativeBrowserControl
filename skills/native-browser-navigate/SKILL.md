@@ -1,16 +1,12 @@
 ---
 name: native-browser-navigate
-description: Navigate a live Chrome or Edge tab with this repository's NativeBrowserDriver. Use when the user wants to open a URL in the current browser window before another browser action.
+description: Navigate a live Chrome or Edge tab with the bundled direct runner. Use when the user wants to open a URL in the current browser window before another browser action.
 ---
 
 # Native Browser Navigate
 
-Use `mcp__native-browser-control__driver_navigate` after creating or selecting a session with
-`mcp__native-browser-control__launch_chrome`, `mcp__native-browser-control__launch_edge`,
-or `mcp__native-browser-control__connect_browser`.
-
-The repository-checkout skill under `.agents/skills/` may use the direct runner, but an
-installed plugin must not resolve `skills/...` from the user's current working directory.
+Use `skills/native-browser-usage/scripts/run_native_browser_command.py navigate`.
+When this skill is installed as a plugin, resolve this script from the plugin root as an absolute path; do not resolve `skills/...` from cwd.
 
 Interpret inline `key=value` arguments near the skill mention. Example:
 
@@ -18,8 +14,10 @@ Interpret inline `key=value` arguments near the skill mention. Example:
 
 Rules:
 
-- `browser` and `url` are required unless `session_id` already identifies the browser. Never default the browser.
-- `window_index` is used with `connect_browser`; use `launch_chrome` or `launch_edge` for a new browser.
+- `browser` and `url` are required. Never default the browser.
+- `window_index` selects an existing window; use `launch=true` to start a new browser.
+- This direct runner is the supported path when MCP tools are unavailable or show no tools.
+- `timeout_s` and `interval_s` are passed to the driver; `wait_seconds` adds a separate idle wait.
 - After running, report the target URL and whether the navigation completed.
 
 Supported arguments:
@@ -33,5 +31,4 @@ Supported arguments:
 - `timeout_s`
 - `interval_s`
 
-If an additional wait is needed after navigation, call
-`mcp__native-browser-control__driver_wait_for_idle` with `seconds`.
+If an additional wait is needed after navigation, pass `wait_seconds` to the command.

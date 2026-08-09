@@ -2,10 +2,10 @@
 
 Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium なしで Chrome / Edge を直接操作するプロジェクトです。
 
-利用導線は 3 系統あります。
+利用導線は、MCPが利用できない環境でも成立する直接runnerを中心に構成しています。
 
-- **MCP サーバー (Claude Code 向け、推奨)**: `.claude-plugin/` を `/plugin install` するだけで `launch_chrome` / `launch_edge` / `list_running_browsers` / `connect_browser` と `driver_<method>` (50+) の MCP ツールが使えます。詳細は [プラグインとしての導入](#プラグインとしての導入-claude-code) と [MCP サーバーの使い方](#mcp-サーバーの使い方) を参照。
-- **Codex / ChatGPT プラグイン**: `.codex-plugin/plugin.json` をエントリポイントとして、`skills/` の workflow skill と `.mcp.json` の MCP サーバー設定を一つのプラグインとして同梱しています。
+- **直接runner (Codex / ChatGPT 向け、推奨)**: `skills/native-browser-usage/scripts/` から MCPサーバーなしで操作します。
+- **MCP サーバー (対応クライアント向け、任意)**: `.claude-plugin/` と `.mcp.json` は互換経路として残しています。利用環境にMCPツールが表示されない場合は使用しません。
 - **スキル (Codex CLI / Claude Code project skill)**: `.agents/skills/native-browser-*/` (Codex) と `.claude/skills/native-browser-*/` (Claude Code project skill) を同梱しています。
 - **直接スクリプト実行 (CI / バッチ)**: `skills/native-browser-usage/scripts/run_native_browser_workflow.py` または `run_native_browser_command.py` を直接呼び出します。
 
@@ -38,15 +38,15 @@ pip install -e .
 
 ## プラグインとしての導入 (Codex / ChatGPT)
 
-このリポジトリは、Codex / ChatGPT の共通プラグイン構成にも対応しています。OpenAIのプラグインはskill、MCPサーバー、またはその両方を同梱できるため、本プロジェクトでは次の構成にしています。
+このリポジトリは、MCPサーバーを利用できないCodex / ChatGPT環境でも動くskill中心のプラグイン構成です。
 
 - `.codex-plugin/plugin.json`: プラグインマニフェスト
 - `skills/`: `native-browser-usage` と、summary / navigate / scan / click / set-text / screenshot の操作別skill
-- `.mcp.json`: `native-browser-control` MCPサーバーの接続定義
+- `.mcp.json`: MCP対応クライアント向けの任意の接続定義（Codexプラグインは読み込みません）
 
-ローカルで試す場合は、Codexのローカルマーケットプレイスへこのリポジトリを登録して `native-browser-control` をインストールし、反映後に新しい会話で `$native-browser-usage` または操作別skillを呼び出してください。Windows環境では `uv`、Python 3.11以上、ChromeまたはEdgeが必要です。ChatGPT側でMCPを利用する場合は、利用環境のローカル／公開MCP接続設定と認証ポリシーに従って登録してください。
+ローカルで試す場合は、Codexのローカルマーケットプレイスへこのリポジトリを登録して `native-browser-control` をインストールし、反映後に新しい会話で `$native-browser-usage` または操作別skillを呼び出してください。skillは同梱runnerを実行するため、MCPサーバーの認証やtool公開状態に依存しません。実行時はskillの配置場所からrunnerの絶対パスを解決し、cwdから `skills/...` を推測しません。Windows環境では `uv`、Python 3.11以上、ChromeまたはEdgeが必要です。
 
-MCPサーバーの取得元は、プラグインの`0.2.0`実装と一致するGitコミットに固定しています。MCP実装を更新して公開する場合は、`.mcp.json`のSHAとプラグインバージョンを同時に更新してください。
+MCPを利用する場合のみ、`.mcp.json`の取得元とプラグインバージョンを同時に更新してください。
 
 このリポジトリは既存のユーザー設定や個人マーケットプレイスを自動変更しません。マーケットプレイス登録は利用環境のポリシーに合わせて行ってください。
 

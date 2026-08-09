@@ -6,6 +6,7 @@ description: Set text in an Edit control inside a live Chrome or Edge window wit
 # Native Browser Set Text
 
 Use `skills/native-browser-usage/scripts/run_native_browser_command.py set-text`.
+Resolve the runner from the repository root; do not resolve this path from an unrelated cwd.
 
 Interpret inline `key=value` arguments near the skill mention. Example:
 

@@ -6,6 +6,7 @@ description: Capture a screenshot from a live Chrome or Edge window with this re
 # Native Browser Screenshot
 
 Use `skills/native-browser-usage/scripts/run_native_browser_command.py screenshot`.
+Resolve the runner from the repository root; do not resolve this path from an unrelated cwd.
 
 Interpret inline `key=value` arguments near the skill mention. Example:
 

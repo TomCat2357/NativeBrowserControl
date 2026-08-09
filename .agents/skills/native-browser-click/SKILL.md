@@ -6,6 +6,7 @@ description: Click an element in a live Chrome or Edge window with this reposito
 # Native Browser Click
 
 Use `skills/native-browser-usage/scripts/run_native_browser_command.py click`.
+Resolve the runner from the repository root; do not resolve this path from an unrelated cwd.
 
 Interpret inline `key=value` arguments near the skill mention. Example:
 

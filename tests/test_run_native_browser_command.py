@@ -22,6 +22,38 @@ SPEC.loader.exec_module(MODULE)
 
 
 class BuildSpecTests(unittest.TestCase):
+    def test_navigate_preserves_timeout_and_interval(self):
+        parser = MODULE.build_parser()
+        args = parser.parse_args(
+            [
+                "navigate",
+                "--browser",
+                "edge",
+                "--url",
+                "https://example.com",
+                "--timeout-s",
+                "8",
+                "--interval-s",
+                "0.25",
+            ]
+        )
+
+        spec = MODULE.build_spec(args)
+
+        self.assertEqual(spec["steps"][0]["timeout_s"], 8.0)
+        self.assertEqual(spec["steps"][0]["interval_s"], 0.25)
+
+    def test_connect_builds_summary_workflow(self):
+        parser = MODULE.build_parser()
+        args = parser.parse_args(
+            ["connect", "--browser", "chrome", "--launch", "--max-text-len", "80"]
+        )
+
+        spec = MODULE.build_spec(args)
+
+        self.assertEqual(spec["connect"]["launch"], True)
+        self.assertEqual(spec["steps"], [{"action": "summary", "max_text_len": 80}])
+
     def test_scan_with_filter_builds_scan_then_filter(self):
         parser = MODULE.build_parser()
         args = parser.parse_args(
@@ -95,6 +127,22 @@ class BuildSpecTests(unittest.TestCase):
 
 
 class MainTests(unittest.TestCase):
+    def test_dependency_error_recommends_command_runner(self):
+        output = io.StringIO()
+        error = MODULE.WorkflowError(
+            "dependency_missing",
+            "missing",
+            {"project_root": r"C:\repo", "recommended_runner": "workflow"},
+        )
+
+        with patch.object(MODULE, "run_workflow", side_effect=error):
+            with patch("sys.stdout", output):
+                exit_code = MODULE.main(["summary", "--browser", "chrome"])
+
+        self.assertEqual(exit_code, 1)
+        emitted = json.loads(output.getvalue())
+        self.assertIn("run_native_browser_command.py", emitted["error"]["data"]["recommended_runner"])
+
     def test_main_emits_runner_payload(self):
         output = io.StringIO()
         payload = {"ok": True, "results": [{"action": "summary"}]}

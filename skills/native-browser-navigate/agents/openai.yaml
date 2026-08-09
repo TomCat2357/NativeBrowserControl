@@ -1,10 +1,4 @@
 interface:
   display_name: "Native Browser Navigate"
-  short_description: "Navigate Chrome or Edge through MCP"
-  default_prompt: "Use the NativeBrowserControl MCP tools to navigate a Chrome or Edge tab."
-
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "native-browser-control"
-      description: "NativeBrowserControl MCP server"
+  short_description: "Navigate Chrome or Edge with the direct runner"
+  default_prompt: "Use the bundled direct runner to navigate a Chrome or Edge tab."

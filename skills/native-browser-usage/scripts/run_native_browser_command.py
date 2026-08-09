@@ -45,6 +45,20 @@ def _error_payload(code: str, message: str, data: dict[str, Any] | None = None) 
     return payload
 
 
+def _command_error_data(exc: WorkflowError) -> dict[str, Any] | None:
+    data = dict(exc.data) if isinstance(exc.data, dict) else None
+    if exc.code != "dependency_missing" or data is None:
+        return data
+
+    project_root = data.get("project_root")
+    if project_root:
+        command_runner = (SCRIPT_DIR / "run_native_browser_command.py").resolve()
+        data["recommended_runner"] = (
+            f'uv run --project "{project_root}" python "{command_runner}"'
+        )
+    return data
+
+
 def _csv_list(raw: str | None) -> list[str] | None:
     if raw is None:
         return None
@@ -174,6 +188,13 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--omit-no-name", action="store_true")
         command.add_argument("--min-separator-count", type=int, default=0)
 
+    connect = subparsers.add_parser(
+        "connect",
+        help="Connect to a browser window and return its summary.",
+    )
+    add_common_options(connect)
+    connect.add_argument("--max-text-len", type=int, default=50)
+
     summary = subparsers.add_parser("summary", help="Get a browser summary.")
     add_common_options(summary)
     summary.add_argument("--max-text-len", type=int, default=50)
@@ -181,6 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
     navigate = subparsers.add_parser("navigate", help="Navigate the current tab.")
     add_common_options(navigate)
     navigate.add_argument("--url", required=True)
+    navigate.add_argument("--timeout-s", type=float)
+    navigate.add_argument("--interval-s", type=float)
     navigate.add_argument("--wait-seconds", type=float)
 
     scan = subparsers.add_parser("scan", help="Scan elements and optionally filter them.")
@@ -219,10 +242,14 @@ def build_spec(args: argparse.Namespace) -> dict[str, Any]:
     connect = _build_connect_spec(args)
     steps: list[dict[str, Any]]
 
-    if args.command == "summary":
+    if args.command in {"connect", "summary"}:
         steps = [{"action": "summary", "max_text_len": args.max_text_len}]
     elif args.command == "navigate":
         steps = [{"action": "navigate", "url": args.url}]
+        if args.timeout_s is not None:
+            steps[0]["timeout_s"] = args.timeout_s
+        if args.interval_s is not None:
+            steps[0]["interval_s"] = args.interval_s
         if args.wait_seconds is not None:
             steps.append({"action": "wait", "seconds": args.wait_seconds})
     elif args.command == "scan":
@@ -290,7 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = _error_payload("invalid_command", str(exc), exc.data)
         exit_code = 1
     except WorkflowError as exc:
-        payload = _error_payload(exc.code, str(exc), getattr(exc, "data", None))
+        payload = _error_payload(exc.code, str(exc), _command_error_data(exc))
         exit_code = 1
     except NativeBrowserError as exc:
         payload = _error_payload(exc.code, str(exc), getattr(exc, "data", None))
