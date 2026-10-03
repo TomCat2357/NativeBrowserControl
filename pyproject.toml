@@ -10,7 +10,7 @@ dependencies = [
     "pywin32>=312",
     "pywinauto>=0.6.9",
     "tqdm>=4.66.4",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
     "regex>=2026.1.15"
 ]
 

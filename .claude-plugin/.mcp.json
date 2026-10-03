@@ -4,6 +4,7 @@
       "command": "uvx",
       "args": [
         "--python", "3.11",
+        "--with", "mcp<2",
         "--from", "git+https://github.com/TomCat2357/NativeBrowserControl",
         "native-browser-control"
       ]
