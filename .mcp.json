@@ -8,7 +8,7 @@
         "--with",
         "mcp<2",
         "--from",
-        "git+https://github.com/TomCat2357/NativeBrowserControl@e6d3027f45c8cdfe1c503dbaf633fb065fdabc99",
+        "git+https://github.com/TomCat2357/NativeBrowserControl@dd85bbf844d522df27c45a3ef4f216523772deed",
         "native-browser-control"
       ]
     }

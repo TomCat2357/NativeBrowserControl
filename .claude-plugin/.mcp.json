@@ -5,7 +5,7 @@
       "args": [
         "--python", "3.11",
         "--with", "mcp<2",
-        "--from", "git+https://github.com/TomCat2357/NativeBrowserControl",
+        "--from", "git+https://github.com/TomCat2357/NativeBrowserControl@dd85bbf844d522df27c45a3ef4f216523772deed",
         "native-browser-control"
       ]
     }
