@@ -5,7 +5,7 @@ Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium な�
 利用導線は、MCPが利用できない環境でも成立する直接runnerを中心に構成しています。
 
 - **直接runner (Codex / ChatGPT 向け、推奨)**: `skills/native-browser-usage/scripts/` から MCPサーバーなしで操作します。
-- **MCP サーバー (対応クライアント向け、任意)**: `.claude-plugin/` と `.mcp.json` は互換経路として残しています。利用環境にMCPツールが表示されない場合は使用しません。
+- **MCP サーバー (対応クライアント向け、任意)**: `[mcp]` extra を入れた場合のみ利用できます。リポジトリ直下の `.mcp.json` は同梱せず、必要な人が `native-browser-control --write-mcp-config` で生成します。Claude Code プラグイン経由の場合は `.claude-plugin/.mcp.json` を使います。
 - **スキル (Codex CLI / Claude Code project skill)**: `.agents/skills/native-browser-*/` (Codex) と `.claude/skills/native-browser-*/` (Claude Code project skill) を同梱しています。
 - **直接スクリプト実行 (CI / バッチ)**: `skills/native-browser-usage/scripts/run_native_browser_workflow.py` または `run_native_browser_command.py` を直接呼び出します。
 
@@ -33,8 +33,18 @@ Windows の UI Automation (`pywinauto` / `pywin32`) を使って、Selenium な�
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install -e .
+pip install -e .            # skill / 直接runnerのみ (mcp は入らない)
+# uv の場合: uv sync
 ```
+
+MCP サーバーも使う場合だけ `[mcp]` extra を付け、MCP 接続定義を生成します。
+
+```powershell
+pip install -e ".[mcp]"     # uv の場合: uv sync --extra mcp
+native-browser-control --write-mcp-config   # ./.mcp.json を生成 (既存ファイルは --force で上書き)
+```
+
+生成される `.mcp.json` は、この環境の Python で `python -m native_browser_control.cli` を起動する定義です。起動のたびに GitHub からコードを取得することはありません。`.mcp.json` は `.gitignore` 済みです。`[mcp]` なしで `native-browser-control` を実行すると、導入方法を案内して終了します。
 
 ## プラグインとしての導入 (Codex / ChatGPT)
 
@@ -42,11 +52,11 @@ pip install -e .
 
 - `.codex-plugin/plugin.json`: プラグインマニフェスト
 - `skills/`: `native-browser-usage` と、summary / navigate / scan / click / set-text / screenshot の操作別skill
-- `.mcp.json`: MCP対応クライアント向けの任意の接続定義（Codexプラグインは読み込みません）
+- `.mcp.json`: 同梱しません。MCP を使う場合のみ `native-browser-control --write-mcp-config` で生成します（Codexプラグインは読み込みません）
 
 ローカルで試す場合は、Codexのローカルマーケットプレイスへこのリポジトリを登録して `native-browser-control` をインストールし、反映後に新しい会話で `$native-browser-usage` または操作別skillを呼び出してください。skillは同梱runnerを実行するため、MCPサーバーの認証やtool公開状態に依存しません。実行時はskillの配置場所からrunnerの絶対パスを解決し、cwdから `skills/...` を推測しません。Windows環境では `uv`、Python 3.11以上、ChromeまたはEdgeが必要です。
 
-MCPを利用する場合のみ、`.mcp.json`の取得元とプラグインバージョンを同時に更新してください。
+Claude Code プラグインで MCP を利用する場合、`.claude-plugin/.mcp.json` は取得元をコミット SHA で固定しています。サーバーを更新するときは SHA とプラグインバージョンを同時に更新してください。
 
 このリポジトリは既存のユーザー設定や個人マーケットプレイスを自動変更しません。マーケットプレイス登録は利用環境のポリシーに合わせて行ってください。
 
@@ -301,10 +311,12 @@ Codex CLI の slash wrapper（任意）:
 
 ### 直接起動
 
+`[mcp]` extra が必要です。
+
 ```powershell
 native-browser-control
 # または
-python -m native_browser_control.server
+python -m native_browser_control.cli
 ```
 
 ### add-to-config
@@ -315,7 +327,7 @@ MCP 設定追加の legacy command は `commands/add-to-config.md` に残して�
 
 - `native_browser_control/driver.py`: 実ブラウザ制御の本体
 - `.codex-plugin/plugin.json`: Codex / ChatGPT プラグインマニフェスト
-- `.mcp.json`: Codex / ChatGPT 用 MCP サーバー定義
+- `native_browser_control/cli.py`: `native-browser-control` コマンド入口 (`[mcp]` 判定、`--write-mcp-config`)
 - `skills/native-browser-usage/`: 推奨 skill
 - `skills/native-browser-{summary,navigate,scan,click,set-text,screenshot}/`: 操作別 skill
 - `skills/native-browser-usage/scripts/run_native_browser_workflow.py`: direct driver 実行入口

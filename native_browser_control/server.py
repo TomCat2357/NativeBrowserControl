@@ -813,7 +813,7 @@ async def run_server() -> None:
         )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Native Browser Control MCP Server",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -823,7 +823,7 @@ def main() -> None:
         action="version",
         version=f"native-browser-control {__version__}",
     )
-    parser.parse_args()
+    parser.parse_args(argv)
     asyncio.run(run_server())
 
 

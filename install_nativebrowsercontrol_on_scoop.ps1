@@ -3,7 +3,15 @@
 # Python is managed by uv (NOT Scoop)
 # Always run in USER HOME
 # PowerShell-safe / PATH-independent
+#
+# Usage:
+#   .\install_nativebrowsercontrol_on_scoop.ps1           # skills / direct runner only (no mcp)
+#   .\install_nativebrowsercontrol_on_scoop.ps1 -WithMcp  # also install the MCP server ([mcp] extra)
 # ==========================================
+
+param(
+    [switch]$WithMcp
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -77,8 +85,14 @@ python -m ensurepip --upgrade
 # ----------------
 # Install NativeBrowserControl (from GitHub)
 # ----------------
-Write-Host "[EXTRA] Installing NativeBrowserControl from GitHub..."
-python -m pip install git+https://github.com/TomCat2357/NativeBrowserControl.git
+$PackageSource = "git+https://github.com/TomCat2357/NativeBrowserControl.git"
+if ($WithMcp) {
+    Write-Host "[EXTRA] Installing NativeBrowserControl with MCP server ([mcp] extra) from GitHub..."
+    python -m pip install "native-browser-control[mcp] @ $PackageSource"
+} else {
+    Write-Host "[EXTRA] Installing NativeBrowserControl (without MCP server) from GitHub..."
+    python -m pip install $PackageSource
+}
 
 # ----------------
 # Verification (SAFE)
@@ -94,4 +108,9 @@ Write-Host ""
 Write-Host "UV_NATIVE_TLS=$env:UV_NATIVE_TLS (session only)"
 Write-Host "VIRTUAL_ENV=$env:VIRTUAL_ENV"
 Write-Host "Current directory: $(Get-Location)"
+if ($WithMcp) {
+    Write-Host "MCP server: installed. Run native-browser-control --write-mcp-config in your project directory to create .mcp.json."
+} else {
+    Write-Host "MCP server: not installed. Re-run with -WithMcp to add it."
+}
 Write-Host "All done."
