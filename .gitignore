@@ -19,3 +19,7 @@ native_browser_control.egg-info*
 !tests/test_run_native_browser_command.py
 !tests/test_driver_tool_info.py
 !tests/test_run_native_browser_workflow.py
+!tests/test_cli.py
+
+# MCP 接続定義は `native-browser-control --write-mcp-config` で各自生成する
+/.mcp.json

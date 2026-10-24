@@ -10,8 +10,12 @@ dependencies = [
     "pywin32>=312",
     "pywinauto>=0.6.9",
     "tqdm>=4.66.4",
-    "mcp>=1.0.0,<2",
     "regex>=2026.1.15"
+]
+
+[project.optional-dependencies]
+mcp = [
+    "mcp>=1.0.0,<2",
 ]
 
 [tool.uv]
@@ -24,7 +28,7 @@ package = true
 include = ["native_browser_control*"]
 
 [project.scripts]
-native-browser-control = "native_browser_control.server:main"
+native-browser-control = "native_browser_control.cli:main"
 
 [build-system]
 requires = ["setuptools==80.9.0", "wheel"]
