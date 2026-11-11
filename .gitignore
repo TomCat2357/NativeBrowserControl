@@ -23,3 +23,11 @@ native_browser_control.egg-info*
 
 # MCP 接続定義は `native-browser-control --write-mcp-config` で各自生成する
 /.mcp.json
+
+# Claude Code の個人設定（「今後は確認しない」で許可したコマンドが平文で残るため）
+.claude/settings.local.json
+
+# 認証情報・環境変数ファイル
+.env
+.env.*
+!.env.example
